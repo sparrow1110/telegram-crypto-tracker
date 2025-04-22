@@ -94,16 +94,19 @@ class DatabaseManager:
         except SQLAlchemyError as e:
             db.session.rollback()
             logger.error(f"Error removing favorite: {e}")
-            return False
+            raise
 
     def get_favorite_cryptos(self, user_id):
         try:
+            user_exists = User.query.get(user_id) is not None
+            if not user_exists:
+                return None  # Возвращаем None, если пользователь не найден
+
             favorites = UserFavorite.query.filter_by(user_id=user_id).order_by(UserFavorite.added_on).all()
             return [fav.crypto_symbol for fav in favorites]
         except SQLAlchemyError as e:
             logger.error(f"Error getting favorites: {e}")
-            return []
-
+            raise  # Передаем исключение дальше, чтобы оно было обработано в маршруте
     def get_user_count(self):
         try:
             return User.query.count()
@@ -129,7 +132,7 @@ class DatabaseManager:
             return [(row.crypto_symbol, row.count) for row in result]
         except SQLAlchemyError as e:
             logger.error(f"Error getting popular cryptos: {e}")
-            return []
+            raise
 
     def get_popular_commands(self):
         try:
@@ -180,7 +183,7 @@ class DatabaseManager:
         except SQLAlchemyError as e:
             db.session.rollback()
             logger.error(f"Error blocking user {user_id}: {e}")
-            return False
+            raise
 
     def unblock_user(self, user_id):
         try:
@@ -195,7 +198,7 @@ class DatabaseManager:
         except SQLAlchemyError as e:
             db.session.rollback()
             logger.error(f"Error unblocking user {user_id}: {e}")
-            return False
+            raise
 
     def get_count_favorite(self):
         try:
@@ -207,7 +210,7 @@ class DatabaseManager:
     def is_blocked(self, user_id):
         try:
             user = User.query.get(user_id)
-            return user.is_blocked if user else False
+            return user.is_blocked if user else None
         except SQLAlchemyError as e:
             logger.error(f"Error checking user block status: {e}")
-            return False
+            raise

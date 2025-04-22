@@ -76,8 +76,8 @@ def block_user(user_id):
         )
     except Exception as e:
         return format_response(
-            errors=[{'code': 'BlockFailed', 'message': str(e)}],
-            status_code=400
+            errors=[{'code': 'InternalServerError', 'message': str(e)}],
+            status_code=500
         )
 
 @app.route('/v1/users/<int:user_id>/unblock', methods=['POST'])
@@ -99,8 +99,8 @@ def unblock_user(user_id):
         )
     except Exception as e:
         return format_response(
-            errors=[{'code': 'UnblockFailed', 'message': str(e)}],
-            status_code=400
+            errors=[{'code': 'InternalServerError', 'message': str(e)}],
+            status_code=500
         )
 
 @app.errorhandler(404)

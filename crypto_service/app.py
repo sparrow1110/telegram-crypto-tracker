@@ -59,8 +59,7 @@ def get_coin(symbol):
                 data=None,
                 errors=[{
                     'code': 'NotFound',
-                    'message': coin_info['error'],
-                    'meta': {'suggestions': coin_info.get('suggestions', [])}
+                    'message': coin_info['error']
                 }],
                 status_code=404
             )

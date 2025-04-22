@@ -48,7 +48,7 @@ class AdminPanel:
             return stats
         except Exception as e:
             logger.error(f"Error getting stats: {e}")
-            return "Ошибка при получении статистики. Попробуйте позже."
+            raise
 
     def get_popular_cryptos(self):
         """Get popular cryptocurrencies"""
@@ -68,7 +68,7 @@ class AdminPanel:
             return result
         except Exception as e:
             logger.error(f"Error getting popular cryptos: {e}")
-            return "Ошибка при получении данных. Попробуйте позже."
+            raise
 
     def block_user(self, user_id):
         """Block user"""
@@ -81,12 +81,13 @@ class AdminPanel:
         except requests.exceptions.HTTPError as e:
             if response.status_code == 404:
                 logger.warning(f"User {user_id} not found")
+                return False
             else:
                 logger.error(f"Error blocking user {user_id}: {e}")
-            return False
+                raise
         except Exception as e:
             logger.error(f"Error blocking user {user_id}: {e}")
-            return False
+            raise
 
     def unblock_user(self, user_id):
         """Unblock user"""
@@ -99,9 +100,10 @@ class AdminPanel:
         except requests.exceptions.HTTPError as e:
             if response.status_code == 404:
                 logger.warning(f"User {user_id} not found")
+                return False
             else:
                 logger.error(f"Error unblocking user {user_id}: {e}")
-            return False
+                raise
         except Exception as e:
             logger.error(f"Error unblocking user {user_id}: {e}")
-            return False
+            raise

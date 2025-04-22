@@ -28,9 +28,14 @@ def create_app(test_config=None):
     return app
 
 def format_response(data=None, errors=None, meta=None, status_code=200):
-    response = {'data': data}
+    response = {'data': data} if data is not None else {}
+
     if errors:
-        response['errors'] = errors
+        # Обеспечиваем правильную структуру ошибок
+        if not isinstance(errors, list):
+            errors = [errors]
+        response['errors'] = [e if isinstance(e, dict) else {'message': str(e)} for e in errors]
+
     if meta:
         response['meta'] = meta
     return jsonify(response), status_code
@@ -82,8 +87,8 @@ def register_routes(app):
 
         except Exception as e:
             return format_response(
-                errors=[{'code': 'BadRequest', 'message': str(e)}],
-                status_code=400
+                errors=[{'code': 'InternalServerError', 'message': str(e)}],
+                status_code=500
             )
 
     @app.route('/v1/command-logs', methods=['POST'])
@@ -99,8 +104,8 @@ def register_routes(app):
             )
         except Exception as e:
             return format_response(
-                errors=[{'code': 'BadRequest', 'message': str(e)}],
-                status_code=400
+                errors=[{'code': 'InternalServerError', 'message': str(e)}],
+                status_code=500
             )
 
     @app.route('/v1/users/<int:user_id>/favorite-cryptos', methods=['POST'])
@@ -119,8 +124,8 @@ def register_routes(app):
             )
         except Exception as e:
             return format_response(
-                errors=[{'code': 'BadRequest', 'message': str(e)}],
-                status_code=400
+                errors=[{'code': 'InternalServerError', 'message': str(e)}],
+                status_code=500
             )
 
     @app.route('/v1/users/<int:user_id>/favorite-cryptos/<string:crypto_symbol>', methods=['DELETE'])
@@ -135,14 +140,19 @@ def register_routes(app):
             )
         except Exception as e:
             return format_response(
-                errors=[{'code': 'BadRequest', 'message': str(e)}],
-                status_code=400
+                errors=[{'code': 'InternalServerError', 'message': str(e)}],
+                status_code=500
             )
 
     @app.route('/v1/users/<int:user_id>/favorite-cryptos', methods=['GET'])
     def get_favorites(user_id):
         try:
             favorites = db_manager.get_favorite_cryptos(user_id)
+            if favorites is None:
+                return format_response(
+                    errors=[{'code': 'NotFound', 'message': 'User not found'}],
+                    status_code=404
+                )
             return format_response(data={'favorites': favorites})
         except Exception as e:
             return format_response(
@@ -161,8 +171,8 @@ def register_routes(app):
             )
         except Exception as e:
             return format_response(
-                errors=[{'code': 'BadRequest', 'message': str(e)}],
-                status_code=400
+                errors=[{'code': 'InternalServerError', 'message': str(e)}],
+                status_code=500
             )
 
     @app.route('/v1/users/unblocked', methods=['GET'])
@@ -199,11 +209,8 @@ def register_routes(app):
             )
         except Exception as e:
             return format_response(
-                errors=[{
-                    'code': 'BlockFailed',
-                    'message': str(e)
-                }],
-                status_code=400
+                errors=[{'code': 'InternalServerError', 'message': str(e)}],
+                status_code=500
             )
 
     @app.route('/v1/users/<int:user_id>/unblock', methods=['POST'])
@@ -229,18 +236,24 @@ def register_routes(app):
             )
         except Exception as e:
             return format_response(
-                errors=[{
-                    'code': 'UnblockFailed',
-                    'message': str(e)
-                }],
-                status_code=400
+                errors=[{'code': 'InternalServerError', 'message': str(e)}],
+                status_code=500
             )
 
     @app.route('/v1/users/<int:user_id>/block-status', methods=['GET'])
     def is_blocked(user_id):
         try:
             blocked = db_manager.is_blocked(user_id)
+            if blocked is None:
+                return format_response(
+                    errors=[{
+                        'code': 'UserNotFound',
+                        'message': f'User {user_id} not found'
+                    }],
+                    status_code=404
+                )
             return format_response(data={'user_id': user_id, 'is_blocked': blocked})
+
         except Exception as e:
             return format_response(
                 errors=[{'code': 'InternalServerError', 'message': str(e)}],
