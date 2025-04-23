@@ -1,0 +1,34 @@
+Получает список незаблокированных пользователей
+---
+tags:
+  - Users
+responses:
+  200:
+    description: Список ID незаблокированных пользователей
+    schema:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            users:
+              type: array
+              items:
+                type: integer
+                example: 123456789
+  500:
+    description: Ошибка сервера
+    schema:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: InternalServerError
+              message:
+                type: string
+                example: "Failed to get unblocked users"

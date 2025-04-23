@@ -1,0 +1,59 @@
+Блокирует пользователя
+---
+tags:
+  - Users
+parameters:
+  - name: user_id
+    in: path
+    type: integer
+    required: true
+    description: ID пользователя
+responses:
+  200:
+    description: Пользователь заблокирован
+    schema:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            user_id:
+              type: integer
+            is_blocked:
+              type: boolean
+              example: true
+            action:
+              type: string
+              example: "admin_blocked"
+  404:
+    description: Пользователь не найден
+    schema:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: NotFound
+              message:
+                type: string
+                example: "User not found"
+  500:
+    description: Ошибка сервера
+    schema:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: InternalServerError
+              message:
+                type: string
+                example: "Database connection error"

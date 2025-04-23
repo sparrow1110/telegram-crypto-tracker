@@ -375,6 +375,7 @@ async def send_favorites(message):
 @bot.message_handler(commands=['admin'])
 @check_user_blocked
 async def admin_panel(message):
+    await register_user(message)
     user_id = message.from_user.id
     try:
         async with aiohttp.ClientSession() as session:
@@ -400,12 +401,12 @@ async def admin_panel(message):
 @bot.message_handler(func=lambda message: True)
 @check_user_blocked
 async def handle_text_messages(message):
-    await register_user(message)
     text = message.text
 
     if text == '💰 Все криптовалюты':
         await send_prices(message)
     elif text == '🔝 Топ-5 криптовалют':
+        await register_user(message)
         await log_command(message.from_user.id, '/top5')
         try:
             async with aiohttp.ClientSession() as session:
@@ -419,6 +420,7 @@ async def handle_text_messages(message):
             await bot.send_message(message.chat.id, "Ошибка при получении данных. Попробуйте позже.")
 
     elif text == '🔍 Поиск криптовалюты':
+        await register_user(message)
         await log_command(message.from_user.id, '/search')
         searching_crypto[message.from_user.id] = True
         keyboard = create_popular_coins_keyboard()
@@ -432,6 +434,7 @@ async def handle_text_messages(message):
         await send_help(message)
 
     elif text == '🔙 Назад':
+        await register_user(message)
         searching_crypto.pop(message.from_user.id, None)
         keyboard = create_main_keyboard(message.from_user.id)
         await bot.send_message(message.chat.id, "Выберите действие:", reply_markup=keyboard)
@@ -457,6 +460,7 @@ async def handle_text_messages(message):
 
 
 async def show_coin_info(message, symbol):
+    await register_user(message)
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{CRYPTO_SERVICE_URL}/crypto-prices") as response:
@@ -499,6 +503,7 @@ async def show_coin_info(message, symbol):
 
 async def handle_admin_message(message):
     user_id = message.from_user.id
+    await register_user(message)
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{ADMIN_SERVICE_URL}/admins/{user_id}/status") as response:
@@ -740,7 +745,8 @@ async def handle_callback(call):
                             await bot.answer_callback_query(call.id, f"{symbol} уже в избранном")
                 else:
                     async with session.delete(
-                            f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos/{symbol}"
+                            f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos",
+                            json={'crypto_symbol': symbol}
                     ) as response:
                         response.raise_for_status()
                         if response.status == 200:

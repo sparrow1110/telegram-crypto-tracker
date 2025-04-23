@@ -1,6 +1,6 @@
 from flask import Flask, jsonify
 from .crypto_parser import CryptoParser
-from flasgger import Swagger
+from flasgger import Swagger, swag_from
 from .price_cache import get_cached_prices, get_cached_coin_info
 import time
 import threading
@@ -46,116 +46,8 @@ def scheduled_parsing():
 
 
 @app.route('/v1/crypto-prices', methods=['GET'])
+@swag_from('docs/get_prices.yaml')
 def get_prices():
-    """
-    Получает текущие цены криптовалют
-    ---
-    tags:
-      - Crypto
-    responses:
-      200:
-        description: Текущие цены криптовалют
-        schema:
-          type: object
-          properties:
-            data:
-              type: object
-              properties:
-                last_updated:
-                  type: string
-                  format: date-time
-                  example: "2023-05-15 12:34:56"
-                BTC:
-                  type: object
-                  properties:
-                    name:
-                      type: string
-                      example: Bitcoin
-                    price_usd:
-                      type: number
-                      format: float
-                      example: 50000.1234
-                    percent_change_1h:
-                      type: number
-                      format: float
-                      example: 0.5
-                    percent_change_24h:
-                      type: number
-                      format: float
-                      example: -2.3
-                    percent_change_7d:
-                      type: number
-                      format: float
-                      example: 5.7
-                    market_cap_usd:
-                      type: number
-                      format: float
-                      example: 950000000000
-                    rank:
-                      type: integer
-                      example: 1
-                ETH:
-                  type: object
-                  properties:
-                    name:
-                      type: string
-                      example: Ethereum
-                    price_usd:
-                      type: number
-                      format: float
-                      example: 3000.50
-                    percent_change_1h:
-                      type: number
-                      format: float
-                      example: 0.2
-                    percent_change_24h:
-                      type: number
-                      format: float
-                      example: -1.5
-                    percent_change_7d:
-                      type: number
-                      format: float
-                      example: 3.2
-                    market_cap_usd:
-                      type: number
-                      format: float
-                      example: 350000000000
-                    rank:
-                      type: integer
-                      example: 2
-      503:
-        description: Сервис временно недоступен
-        schema:
-          type: object
-          properties:
-            errors:
-              type: array
-              items:
-                type: object
-                properties:
-                  code:
-                    type: string
-                    example: ServiceUnavailable
-                  message:
-                    type: string
-                    example: "Failed to get crypto prices"
-      500:
-        description: Ошибка сервера
-        schema:
-          type: object
-          properties:
-            errors:
-              type: array
-              items:
-                type: object
-                properties:
-                  code:
-                    type: string
-                    example: InternalServerError
-                  message:
-                    type: string
-                    example: "API request failed"
-    """
     try:
         data = get_cached_prices()
         if not data:
@@ -172,90 +64,8 @@ def get_prices():
 
 
 @app.route('/v1/crypto-prices/<string:symbol>', methods=['GET'])
+@swag_from('docs/get_coin.yaml')
 def get_coin(symbol):
-    """
-    Получает информацию о конкретной криптовалюте
-    ---
-    tags:
-      - Crypto
-    parameters:
-      - name: symbol
-        in: path
-        type: string
-        required: true
-        description: Символ криптовалюты (например, BTC)
-    responses:
-      200:
-        description: Информация о криптовалюте
-        schema:
-          type: object
-          properties:
-            data:
-              type: object
-              properties:
-                name:
-                  type: string
-                  example: Bitcoin
-                price_usd:
-                  type: number
-                  format: float
-                  example: 50000.1234
-                percent_change_1h:
-                  type: number
-                  format: float
-                  example: 0.5
-                percent_change_24h:
-                  type: number
-                  format: float
-                  example: -2.3
-                percent_change_7d:
-                  type: number
-                  format: float
-                  example: 5.7
-                market_cap_usd:
-                  type: number
-                  format: float
-                  example: 950000000000
-                rank:
-                  type: integer
-                  example: 1
-                last_updated:
-                  type: string
-                  format: date-time
-                  example: "2023-05-15 12:34:56"
-      404:
-        description: Криптовалюта не найдена
-        schema:
-          type: object
-          properties:
-            errors:
-              type: array
-              items:
-                type: object
-                properties:
-                  code:
-                    type: string
-                    example: NotFound
-                  message:
-                    type: string
-                    example: "Crypto not found"
-      500:
-        description: Ошибка сервера
-        schema:
-          type: object
-          properties:
-            errors:
-              type: array
-              items:
-                type: object
-                properties:
-                  code:
-                    type: string
-                    example: InternalServerError
-                  message:
-                    type: string
-                    example: "Failed to parse crypto data"
-    """
     try:
         coin_info = get_cached_coin_info(symbol)
         if not coin_info:

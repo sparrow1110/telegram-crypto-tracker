@@ -1,0 +1,56 @@
+Получает список избранных криптовалют пользователя
+---
+tags:
+  - Favorites
+parameters:
+  - name: user_id
+    in: path
+    type: integer
+    required: true
+    example: 123456789
+responses:
+  200:
+    description: Список избранных криптовалют
+    schema:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            favorites:
+              type: array
+              items:
+                type: string
+                example: "BTC"
+  404:
+    description: Пользователь не найден
+    schema:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: NotFound
+              message:
+                type: string
+                example: "User not found"
+  500:
+    description: Ошибка сервера
+    schema:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: InternalServerError
+              message:
+                type: string
+                example: "Failed to get favorites"

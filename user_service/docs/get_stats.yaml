@@ -1,0 +1,60 @@
+Получает статистику пользователей
+---
+tags:
+  - Stats
+responses:
+  200:
+    description: Статистика пользователей
+    schema:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            user_count:
+              type: integer
+              description: Общее количество пользователей
+              example: 4
+            active_users_24h:
+              type: integer
+              description: Количество активных пользователей за 24 часа
+              example: 3
+            active_users_7d:
+              type: integer
+              description: Количество активных пользователей за 7 дней
+              example: 4
+            blocked_count:
+              type: integer
+              description: Количество заблокированных пользователей
+              example: 0
+            favorites_count:
+              type: integer
+              description: Общее количество избранных криптовалют
+              example: 2
+            popular_commands:
+              type: array
+              description: Популярные команды за последние 7 дней
+              items:
+                type: array
+                items:
+                  oneOf:
+                    - type: string
+                    - type: integer
+                example: ["/search", 7]
+              example: [["/search", 7], ["/prices", 6], ["/top5", 6]]
+  500:
+    description: Ошибка сервера
+    schema:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: InternalServerError
+              message:
+                type: string
+                example: "Database connection error"

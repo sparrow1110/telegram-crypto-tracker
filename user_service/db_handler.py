@@ -55,6 +55,9 @@ class DatabaseManager:
 
     def add_favorite_crypto(self, user_id, crypto_symbol):
         try:
+            user_exists = User.query.get(user_id) is not None
+            if not user_exists:
+                return None  # Возвращаем None, если пользователь не найден
             # Check if already exists
             exists = UserFavorite.query.filter_by(
                 user_id=user_id,

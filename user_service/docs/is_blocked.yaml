@@ -1,0 +1,57 @@
+Проверяет, заблокирован ли пользователь
+---
+tags:
+  - Users
+parameters:
+  - name: user_id
+    in: path
+    type: integer
+    required: true
+    example: 123456789
+responses:
+  200:
+    description: Статус блокировки пользователя
+    schema:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            user_id:
+              type: integer
+              example: 123456789
+            is_blocked:
+              type: boolean
+              example: false
+  404:
+    description: Пользователь не найден
+    schema:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: UserNotFound
+              message:
+                type: string
+                example: "User 123456789 not found"
+  500:
+    description: Ошибка сервера
+    schema:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: InternalServerError
+              message:
+                type: string
+                example: "Failed to check block status"

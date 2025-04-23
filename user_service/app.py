@@ -1,5 +1,5 @@
 from flask import Flask, jsonify, request
-from flasgger import Swagger
+from flasgger import Swagger, swag_from
 from user_service.models import db
 from user_service.db_handler import DatabaseManager
 import os
@@ -14,7 +14,7 @@ def create_app(test_config=None):
         "swagger": "2.0",
         "info": {
             "title": "User Service API",
-            "description": "API для управления пользователями криптобота",
+            "description": "API для управления пользовательскими данными",
             "version": "1.0.0"
         },
         "consumes": [
@@ -56,69 +56,8 @@ def format_response(data=None, errors=None, meta=None, status_code=200):
 
 def register_routes(app):
     @app.route('/v1/stats', methods=['GET'])
+    @swag_from('docs/get_stats.yaml')
     def get_stats():
-        """
-        Получает статистику пользователей
-        ---
-        tags:
-          - Stats
-        responses:
-          200:
-            description: Статистика пользователей
-            schema:
-              type: object
-              properties:
-                data:
-                  type: object
-                  properties:
-                    user_count:
-                      type: integer
-                      description: Общее количество пользователей
-                      example: 4
-                    active_users_24h:
-                      type: integer
-                      description: Количество активных пользователей за 24 часа
-                      example: 3
-                    active_users_7d:
-                      type: integer
-                      description: Количество активных пользователей за 7 дней
-                      example: 4
-                    blocked_count:
-                      type: integer
-                      description: Количество заблокированных пользователей
-                      example: 0
-                    favorites_count:
-                      type: integer
-                      description: Общее количество избранных криптовалют
-                      example: 2
-                    popular_commands:
-                      type: array
-                      description: Популярные команды за последние 7 дней
-                      items:
-                        type: array
-                        items:
-                          oneOf:
-                            - type: string
-                            - type: integer
-                        example: ["/search", 7]
-                      example: [["/search", 7], ["/prices", 6], ["/top5", 6]]
-          500:
-            description: Ошибка сервера
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: InternalServerError
-                      message:
-                        type: string
-                        example: "Database connection error"
-        """
         try:
             stats = {
                 'user_count': db_manager.get_user_count(),
@@ -136,94 +75,8 @@ def register_routes(app):
             )
 
     @app.route('/v1/users', methods=['POST'])
+    @swag_from('docs/register_user.yaml')
     def register_user():
-        """
-        Регистрирует нового пользователя
-        ---
-        tags:
-          - Users
-        parameters:
-          - name: body
-            in: body
-            required: true
-            schema:
-              type: object
-              required:
-                - user_id
-              properties:
-                user_id:
-                  type: integer
-                username:
-                  type: string
-                first_name:
-                  type: string
-                last_name:
-                  type: string
-        responses:
-          200:
-            description: Информация о пользователе обновлена
-            schema:
-              type: object
-              properties:
-                data:
-                  type: object
-                  properties:
-                    user_id:
-                      type: integer
-                      example: 1
-                    username:
-                      type: string
-                      example: "string"
-                    is_new:
-                      type: boolean
-                      example: false
-          201:
-            description: Пользователь создан
-            schema:
-              type: object
-              properties:
-                data:
-                  type: object
-                  properties:
-                    user_id:
-                      type: integer
-                    username:
-                      type: string
-                    is_new:
-                      type: boolean
-          400:
-            description: Ошибка регистрации
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: RegistrationFailed
-                      message:
-                        type: string
-                        example: "User registration failed"
-          500:
-            description: Ошибка сервера
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: InternalServerError
-                      message:
-                        type: string
-                        example: "Database connection error"
-        """
         data = request.json
         try:
             success, is_new = db_manager.register_user(
@@ -255,73 +108,8 @@ def register_routes(app):
             )
 
     @app.route('/v1/command-logs', methods=['POST'])
+    @swag_from('docs/log_command.yaml')
     def log_command():
-        """
-        Логирует команду пользователя
-        ---
-        tags:
-          - Logs
-        parameters:
-          - name: body
-            in: body
-            required: true
-            schema:
-              type: object
-              required:
-                - user_id
-                - command
-              properties:
-                user_id:
-                  type: integer
-                  example: 1
-                command:
-                  type: string
-                  example: "/prices"
-        responses:
-          200:
-            description: Команда залогирована
-            schema:
-              type: object
-              properties:
-                data:
-                  type: object
-                  properties:
-                    success:
-                      type: boolean
-                      example: true
-          400:
-            description: Ошибка валидации
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: ValidationError
-                      message:
-                        type: string
-                        example: "Missing required field: command"
-          500:
-            description: Ошибка сервера
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: InternalServerError
-                      message:
-                        type: string
-                        example: "Failed to log command"
-        """
         data = request.json
         try:
             success = db_manager.log_command(data['user_id'], data['command'])
@@ -338,77 +126,8 @@ def register_routes(app):
             )
 
     @app.route('/v1/users/<int:user_id>/favorite-cryptos', methods=['POST'])
+    @swag_from('docs/add_favorite.yaml')
     def add_favorite(user_id):
-        """
-        Добавляет криптовалюту в избранное пользователя
-        ---
-        tags:
-          - Favorites
-        parameters:
-          - name: user_id
-            in: path
-            type: integer
-            required: true
-            example: 123456789
-          - name: body
-            in: body
-            required: true
-            schema:
-              type: object
-              required:
-                - crypto_symbol
-              properties:
-                crypto_symbol:
-                  type: string
-                  example: "BTC"
-        responses:
-          201:
-            description: Криптовалюта добавлена в избранное
-            schema:
-              type: object
-              properties:
-                data:
-                  type: object
-                  properties:
-                    user_id:
-                      type: integer
-                      example: 123456789
-                    crypto_symbol:
-                      type: string
-                      example: "BTC"
-          400:
-            description: Криптовалюта уже в избранном
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: AlreadyExists
-                      message:
-                        type: string
-                        example: "Crypto already in favorites"
-          500:
-            description: Ошибка сервера
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: InternalServerError
-                      message:
-                        type: string
-                        example: "Failed to add favorite"
-        """
         data = request.json
         try:
             success = db_manager.add_favorite_crypto(user_id, data['crypto_symbol'])
@@ -416,6 +135,11 @@ def register_routes(app):
                 return format_response(
                     data={'user_id': user_id, 'crypto_symbol': data['crypto_symbol']},
                     status_code=201
+                )
+            elif success is None:
+                return format_response(
+                    errors=[{'code': 'NotFound', 'message': 'User not found'}],
+                    status_code=404
                 )
             return format_response(
                 errors=[{'code': 'AlreadyExists', 'message': 'Crypto already in favorites'}],
@@ -427,72 +151,30 @@ def register_routes(app):
                 status_code=500
             )
 
-    @app.route('/v1/users/<int:user_id>/favorite-cryptos/<string:crypto_symbol>', methods=['DELETE'])
-    def remove_favorite(user_id, crypto_symbol):
-        """
-        Удаляет криптовалюту из избранного пользователя
-        ---
-        tags:
-          - Favorites
-        parameters:
-          - name: user_id
-            in: path
-            type: integer
-            required: true
-          - name: crypto_symbol
-            in: path
-            type: string
-            required: true
-        responses:
-          200:
-            description: Криптовалюта удалена из избранного
-            schema:
-              type: object
-              properties:
-                data:
-                  type: object
-                  properties:
-                    success:
-                      type: boolean
-          404:
-            description: Криптовалюта не найдена в избранном
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: NotFound
-                      message:
-                        type: string
-                        example: "Favorite not found"
-          500:
-            description: Ошибка сервера
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: InternalServerError
-                      message:
-                        type: string
-                        example: "Database operation failed"
-        """
+    @app.route('/v1/users/<int:user_id>/favorite-cryptos', methods=['DELETE'])
+    @swag_from('docs/remove_favorite.yaml')
+    def remove_favorite(user_id):
+        data = request.json
         try:
-            success = db_manager.remove_favorite_crypto(user_id, crypto_symbol)
+            if not data or 'crypto_symbol' not in data:
+                return format_response(
+                    errors=[{'code': 'ValidationError', 'message': 'Missing required field: crypto_symbol'}],
+                    status_code=400
+                )
+
+            success = db_manager.remove_favorite_crypto(user_id, data['crypto_symbol'])
             if success:
-                return format_response(data={'success': True}, status_code=200)
+                return format_response(
+                    data={
+                        'success': True,
+                        'user_id': user_id,
+                        'crypto_symbol': data['crypto_symbol'],
+                        'action': 'removed_from_favorites'
+                    },
+                    status_code=200
+                )
             return format_response(
-                errors=[{'code': 'NotFound', 'message': 'Favorite not found'}],
+                errors=[{'code': 'NotFound', 'message': 'Favorite not found or user does not exist'}],
                 status_code=404
             )
         except Exception as e:
@@ -502,65 +184,8 @@ def register_routes(app):
             )
 
     @app.route('/v1/users/<int:user_id>/favorite-cryptos', methods=['GET'])
+    @swag_from('docs/get_favorites.yaml')
     def get_favorites(user_id):
-        """
-        Получает список избранных криптовалют пользователя
-        ---
-        tags:
-          - Favorites
-        parameters:
-          - name: user_id
-            in: path
-            type: integer
-            required: true
-            example: 123456789
-        responses:
-          200:
-            description: Список избранных криптовалют
-            schema:
-              type: object
-              properties:
-                data:
-                  type: object
-                  properties:
-                    favorites:
-                      type: array
-                      items:
-                        type: string
-                        example: "BTC"
-          404:
-            description: Пользователь не найден
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: NotFound
-                      message:
-                        type: string
-                        example: "User not found"
-          500:
-            description: Ошибка сервера
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: InternalServerError
-                      message:
-                        type: string
-                        example: "Failed to get favorites"
-        """
         try:
             favorites = db_manager.get_favorite_cryptos(user_id)
             if favorites is None:
@@ -576,60 +201,8 @@ def register_routes(app):
             )
 
     @app.route('/v1/stats/popular-cryptos', methods=['GET'])
+    @swag_from('docs/popular_cryptos.yaml')
     def popular_cryptos():
-        """
-        Получает список популярных криптовалют
-        ---
-        tags:
-          - Stats
-        parameters:
-          - name: limit
-            in: query
-            type: integer
-            default: 5
-            description: Количество возвращаемых криптовалют
-        responses:
-          200:
-            description: Популярные криптовалюты
-            schema:
-              type: object
-              properties:
-                data:
-                  type: object
-                  properties:
-                    cryptos:
-                      type: array
-                      items:
-                        type: array
-                        items:
-                          oneOf:
-                            - type: string
-                            - type: integer
-                        example: ["BTC", 150]
-                      example: [["SOL", 1], ["ETH", 1]]
-                meta:
-                  type: object
-                  properties:
-                    limit:
-                      type: integer
-                      example: 5
-          500:
-            description: Ошибка сервера
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: InternalServerError
-                      message:
-                        type: string
-                        example: "Failed to get popular cryptos"
-        """
         try:
             limit = request.args.get('limit', default=5, type=int)
             cryptos = db_manager.get_popular_cryptos(limit)
@@ -644,43 +217,8 @@ def register_routes(app):
             )
 
     @app.route('/v1/users/unblocked', methods=['GET'])
+    @swag_from('docs/unblocked_users.yaml')
     def unblocked_users():
-        """
-        Получает список незаблокированных пользователей
-        ---
-        tags:
-          - Users
-        responses:
-          200:
-            description: Список ID незаблокированных пользователей
-            schema:
-              type: object
-              properties:
-                data:
-                  type: object
-                  properties:
-                    users:
-                      type: array
-                      items:
-                        type: integer
-                        example: 123456789
-          500:
-            description: Ошибка сервера
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: InternalServerError
-                      message:
-                        type: string
-                        example: "Failed to get unblocked users"
-        """
         try:
             users = db_manager.get_unblocked_users()
             return format_response(data={'users': users})
@@ -691,64 +229,8 @@ def register_routes(app):
             )
 
     @app.route('/v1/users/<int:user_id>/block', methods=['POST'])
+    @swag_from('docs/block_user.yaml')
     def block_user(user_id):
-        """
-        Блокирует пользователя
-        ---
-        tags:
-          - Users
-        parameters:
-          - name: user_id
-            in: path
-            required: true
-        responses:
-          200:
-            description: Пользователь заблокирован
-            schema:
-              type: object
-              properties:
-                data:
-                  type: object
-                  properties:
-                    user_id:
-                      type: integer
-                    is_blocked:
-                      type: boolean
-                    action:
-                      type: string
-          404:
-            description: Пользователь не найден
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: UserNotFound
-                      message:
-                        type: string
-                        example: "User 123 not found"
-          500:
-            description: Ошибка сервера
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: InternalServerError
-                      message:
-                        type: string
-                        example: "Failed to update user status"
-        """
         try:
             success = db_manager.block_user(user_id)
             if success:
@@ -774,65 +256,8 @@ def register_routes(app):
             )
 
     @app.route('/v1/users/<int:user_id>/unblock', methods=['POST'])
+    @swag_from('docs/unblock_user.yaml')
     def unblock_user(user_id):
-        """
-        Разблокировка пользователя
-        ---
-        tags:
-          - Users
-        parameters:
-          - name: user_id
-            in: path
-            type: integer
-            required: true
-        responses:
-          200:
-            description: Пользователь разблокирован
-            schema:
-              type: object
-              properties:
-                data:
-                  type: object
-                  properties:
-                    user_id:
-                      type: integer
-                    is_blocked:
-                      type: boolean
-                    action:
-                      type: string
-          404:
-            description: Пользователь не найден
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: UserNotFound
-                      message:
-                        type: string
-                        example: "User 123 not found"
-          500:
-            description: Ошибка сервера
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: InternalServerError
-                      message:
-                        type: string
-                        example: "Failed to update user status"
-        """
         try:
             success = db_manager.unblock_user(user_id)
             if success:
@@ -858,66 +283,8 @@ def register_routes(app):
             )
 
     @app.route('/v1/users/<int:user_id>/block-status', methods=['GET'])
+    @swag_from('docs/is_blocked.yaml')
     def is_blocked(user_id):
-        """
-        Проверяет, заблокирован ли пользователь
-        ---
-        tags:
-          - Users
-        parameters:
-          - name: user_id
-            in: path
-            type: integer
-            required: true
-            example: 123456789
-        responses:
-          200:
-            description: Статус блокировки пользователя
-            schema:
-              type: object
-              properties:
-                data:
-                  type: object
-                  properties:
-                    user_id:
-                      type: integer
-                      example: 123456789
-                    is_blocked:
-                      type: boolean
-                      example: false
-          404:
-            description: Пользователь не найден
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: UserNotFound
-                      message:
-                        type: string
-                        example: "User 123456789 not found"
-          500:
-            description: Ошибка сервера
-            schema:
-              type: object
-              properties:
-                errors:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      code:
-                        type: string
-                        example: InternalServerError
-                      message:
-                        type: string
-                        example: "Failed to check block status"
-        """
         try:
             blocked = db_manager.is_blocked(user_id)
             if blocked is None:

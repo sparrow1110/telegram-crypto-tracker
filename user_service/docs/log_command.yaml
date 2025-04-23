@@ -1,0 +1,64 @@
+Логирует команду пользователя
+---
+tags:
+  - Logs
+parameters:
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      required:
+        - user_id
+        - command
+      properties:
+        user_id:
+          type: integer
+          example: 1
+        command:
+          type: string
+          example: "/prices"
+responses:
+  200:
+    description: Команда залогирована
+    schema:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            success:
+              type: boolean
+              example: true
+  400:
+    description: Ошибка валидации
+    schema:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: ValidationError
+              message:
+                type: string
+                example: "Missing required field: command"
+  500:
+    description: Ошибка сервера
+    schema:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: InternalServerError
+              message:
+                type: string
+                example: "Failed to log command"

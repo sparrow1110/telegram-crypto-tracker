@@ -1,5 +1,5 @@
 from flask import Flask, jsonify, request
-from flasgger import Swagger
+from flasgger import Swagger, swag_from
 from .admin_panel import AdminPanel
 import os
 from dotenv import load_dotenv
@@ -40,47 +40,8 @@ def format_response(data=None, errors=None, meta=None, status_code=200):
     return jsonify(response), status_code
 
 @app.route('/v1/admins/<int:user_id>/status', methods=['GET'])
+@swag_from('docs/is_admin.yaml')
 def is_admin(user_id):
-    """
-    Проверяет, является ли пользователь администратором
-    ---
-    tags:
-      - Admin
-    parameters:
-      - name: user_id
-        in: path
-        type: integer
-        required: true
-        description: ID пользователя
-    responses:
-      200:
-        description: Результат проверки
-        schema:
-          type: object
-          properties:
-            data:
-              type: object
-              properties:
-                is_admin:
-                  type: boolean
-                  description: Является ли пользователь администратором
-      500:
-        description: Ошибка сервера
-        schema:
-          type: object
-          properties:
-            errors:
-              type: array
-              items:
-                type: object
-                properties:
-                  code:
-                    type: string
-                    example: InternalServerError
-                  message:
-                    type: string
-                    example: "Error connecting to database"
-    """
     try:
         is_admin = admin.is_admin(user_id)
         return format_response(data={'is_admin': is_admin})
@@ -91,41 +52,8 @@ def is_admin(user_id):
         )
 
 @app.route('/v1/stats', methods=['GET'])
+@swag_from('docs/get_stats.yaml')
 def get_stats():
-    """
-    Получает статистику бота
-    ---
-    tags:
-      - Stats
-    responses:
-      200:
-        description: Статистика бота
-        schema:
-          type: object
-          properties:
-            data:
-              type: object
-              properties:
-                stats:
-                  type: string
-                  description: Форматированная статистика
-      500:
-        description: Ошибка сервера
-        schema:
-          type: object
-          properties:
-            errors:
-              type: array
-              items:
-                type: object
-                properties:
-                  code:
-                    type: string
-                    example: InternalServerError
-                  message:
-                    type: string
-                    example: "Failed to fetch statistics"
-    """
     try:
         stats = admin.get_bot_stats()
         return format_response(data={'stats': stats})
@@ -136,41 +64,8 @@ def get_stats():
         )
 
 @app.route('/v1/stats/popular-cryptos', methods=['GET'])
+@swag_from('docs/popular_cryptos.yaml')
 def popular_cryptos():
-    """
-    Получает список популярных криптовалют
-    ---
-    tags:
-      - Stats
-    responses:
-      200:
-        description: Популярные криптовалюты
-        schema:
-          type: object
-          properties:
-            data:
-              type: object
-              properties:
-                popular:
-                  type: string
-                  description: Форматированный список популярных криптовалют
-      500:
-        description: Ошибка сервера
-        schema:
-          type: object
-          properties:
-            errors:
-              type: array
-              items:
-                type: object
-                properties:
-                  code:
-                    type: string
-                    example: InternalServerError
-                  message:
-                    type: string
-                    example: "Failed to fetch popular cryptos"
-    """
     try:
         popular = admin.get_popular_cryptos()
         return format_response(data={'popular': popular})
@@ -181,68 +76,8 @@ def popular_cryptos():
         )
 
 @app.route('/v1/users/<int:user_id>/block', methods=['POST'])
+@swag_from('docs/block_user.yaml')
 def block_user(user_id):
-    """
-    Блокирует пользователя
-    ---
-    tags:
-      - Users
-    parameters:
-      - name: user_id
-        in: path
-        type: integer
-        required: true
-        description: ID пользователя
-    responses:
-      200:
-        description: Пользователь заблокирован
-        schema:
-          type: object
-          properties:
-            data:
-              type: object
-              properties:
-                user_id:
-                  type: integer
-                is_blocked:
-                  type: boolean
-                  example: true
-                action:
-                  type: string
-                  example: "admin_blocked"
-      404:
-        description: Пользователь не найден
-        schema:
-          type: object
-          properties:
-            errors:
-              type: array
-              items:
-                type: object
-                properties:
-                  code:
-                    type: string
-                    example: NotFound
-                  message:
-                    type: string
-                    example: "User not found"
-      500:
-        description: Ошибка сервера
-        schema:
-          type: object
-          properties:
-            errors:
-              type: array
-              items:
-                type: object
-                properties:
-                  code:
-                    type: string
-                    example: InternalServerError
-                  message:
-                    type: string
-                    example: "Database connection error"
-    """
     try:
         success = admin.block_user(user_id)
         if success:
@@ -264,69 +99,8 @@ def block_user(user_id):
         )
 
 @app.route('/v1/users/<int:user_id>/unblock', methods=['POST'])
+@swag_from('docs/unblock_user.yaml')
 def unblock_user(user_id):
-    """
-    Разблокирует пользователя
-    ---
-    tags:
-      - Users
-    parameters:
-      - name: user_id
-        in: path
-        type: integer
-        required: true
-        description: ID пользователя
-    responses:
-      200:
-        description: Пользователь разблокирован
-        schema:
-          type: object
-          properties:
-            data:
-              type: object
-              properties:
-                user_id:
-                  type: integer
-                is_blocked:
-                  type: boolean
-                  example: false
-                action:
-                  type: string
-                  example: "admin_unblocked"
-      404:
-        description: Пользователь не найден
-        schema:
-          type: object
-          properties:
-            errors:
-              type: array
-              items:
-                type: object
-                properties:
-                  code:
-                    type: string
-                    example: NotFound
-                  message:
-                    type: string
-                    example: "User not found"
-      500:
-        description: Ошибка сервера
-        schema:
-          type: object
-          properties:
-            errors:
-              type: array
-              items:
-                type: object
-                properties:
-                  code:
-                    type: string
-                    example: InternalServerError
-                  message:
-                    type: string
-                    example: "Database connection error"
-
-    """
     try:
         success = admin.unblock_user(user_id)
         if success:

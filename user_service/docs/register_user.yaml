@@ -1,0 +1,85 @@
+Регистрирует пользователя
+---
+tags:
+  - Users
+parameters:
+  - name: body
+    in: body
+    required: true
+    schema:
+      type: object
+      required:
+        - user_id
+      properties:
+        user_id:
+          type: integer
+        username:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+responses:
+  200:
+    description: Информация о пользователе обновлена
+    schema:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            user_id:
+              type: integer
+              example: 1
+            username:
+              type: string
+              example: "string"
+            is_new:
+              type: boolean
+              example: false
+  201:
+    description: Пользователь создан
+    schema:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            user_id:
+              type: integer
+            username:
+              type: string
+            is_new:
+              type: boolean
+  400:
+    description: Ошибка регистрации
+    schema:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: RegistrationFailed
+              message:
+                type: string
+                example: "User registration failed"
+  500:
+    description: Ошибка сервера
+    schema:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: InternalServerError
+              message:
+                type: string
+                example: "Database connection error"
