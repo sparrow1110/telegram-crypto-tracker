@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime
-from functools import lru_cache
 import os
 import requests
 
@@ -10,11 +9,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 class AdminPanel:
     def __init__(self, user_service_url, crypto_service_url):
         self.user_service_url = user_service_url
         self.crypto_service_url = crypto_service_url
-
 
     def is_admin(self, user_id):
         """Check if user is admin"""

@@ -39,6 +39,7 @@ def format_response(data=None, errors=None, meta=None, status_code=200):
         response['meta'] = meta
     return jsonify(response), status_code
 
+
 def scheduled_parsing():
     while True:
         parser.parse_crypto_prices()
@@ -89,12 +90,14 @@ def get_coin(symbol):
             status_code=500
         )
 
+
 @app.errorhandler(404)
 def not_found(error):
     return format_response(
         errors=[{'code': 'NotFound', 'message': 'Resource not found'}],
         status_code=404
     )
+
 
 if __name__ == '__main__':
     # Start background thread for scheduled parsing

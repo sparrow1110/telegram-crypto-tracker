@@ -27,9 +27,13 @@ responses:
         data:
           type: object
           properties:
-            success:
-              type: boolean
-              example: true
+            user_id:
+              type: integer
+              example: 1
+            command:
+              type: string
+              example: "/prices"
+
   400:
     description: Ошибка валидации
     schema:

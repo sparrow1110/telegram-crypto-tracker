@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 db_manager = DatabaseManager()
 
+
 def create_app(test_config=None):
     app = Flask(__name__)
     swagger = Swagger(app, template={
@@ -41,6 +42,7 @@ def create_app(test_config=None):
 
     return app
 
+
 def format_response(data=None, errors=None, meta=None, status_code=200):
     response = {'data': data} if data is not None else {}
 
@@ -53,6 +55,7 @@ def format_response(data=None, errors=None, meta=None, status_code=200):
     if meta:
         response['meta'] = meta
     return jsonify(response), status_code
+
 
 def register_routes(app):
     @app.route('/v1/stats', methods=['GET'])
@@ -114,7 +117,7 @@ def register_routes(app):
         try:
             success = db_manager.log_command(data['user_id'], data['command'])
             if success:
-                return format_response(data={'success': True})
+                return format_response(data={'user_id': data['user_id'], 'command': data['command']})
             return format_response(
                 errors=[{'code': 'LoggingFailed', 'message': 'Failed to log command'}],
                 status_code=400
@@ -309,6 +312,7 @@ def register_routes(app):
             errors=[{'code': 'NotFound', 'message': 'Resource not found'}],
             status_code=404
         )
+
 
 if __name__ == '__main__':
     app = create_app()

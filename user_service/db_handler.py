@@ -42,7 +42,6 @@ class DatabaseManager:
             logger.error(f"Error registering user: {e}")
             return False, False
 
-
     def log_command(self, user_id, command):
         try:
             stat = UsageStat(user_id=user_id, command=command)
@@ -110,6 +109,7 @@ class DatabaseManager:
         except SQLAlchemyError as e:
             logger.error(f"Error getting favorites: {e}")
             raise  # Передаем исключение дальше, чтобы оно было обработано в маршруте
+
     def get_user_count(self):
         try:
             return User.query.count()
@@ -153,7 +153,7 @@ class DatabaseManager:
 
     def get_unblocked_users(self):
         try:
-            users = User.query.filter(User.is_blocked == False).all()
+            users = User.query.filter(User.is_blocked is False).all()
             return [user.user_id for user in users]
         except SQLAlchemyError as e:
             logger.error(f"Error getting unblocked users: {e}")
@@ -161,7 +161,7 @@ class DatabaseManager:
 
     def get_blocked_users_count(self):
         try:
-            return User.query.filter(User.is_blocked == True).count()
+            return User.query.filter(User.is_blocked is True).count()
         except SQLAlchemyError as e:
             logger.error(f"Error counting blocked users: {e}")
             return 0

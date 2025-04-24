@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify
 from flasgger import Swagger, swag_from
 from .admin_panel import AdminPanel
 import os
@@ -26,6 +26,7 @@ admin = AdminPanel(
     crypto_service_url=f"http://localhost:{os.getenv('CRYPTO_SERVICE_PORT')}"
 )
 
+
 def format_response(data=None, errors=None, meta=None, status_code=200):
     response = {'data': data} if data is not None else {}
 
@@ -39,6 +40,7 @@ def format_response(data=None, errors=None, meta=None, status_code=200):
         response['meta'] = meta
     return jsonify(response), status_code
 
+
 @app.route('/v1/admins/<int:user_id>/status', methods=['GET'])
 @swag_from('docs/is_admin.yaml')
 def is_admin(user_id):
@@ -50,6 +52,7 @@ def is_admin(user_id):
             errors=[{'code': 'InternalServerError', 'message': str(e)}],
             status_code=500
         )
+
 
 @app.route('/v1/stats', methods=['GET'])
 @swag_from('docs/get_stats.yaml')
@@ -63,6 +66,7 @@ def get_stats():
             status_code=500
         )
 
+
 @app.route('/v1/stats/popular-cryptos', methods=['GET'])
 @swag_from('docs/popular_cryptos.yaml')
 def popular_cryptos():
@@ -74,6 +78,7 @@ def popular_cryptos():
             errors=[{'code': 'InternalServerError', 'message': str(e)}],
             status_code=500
         )
+
 
 @app.route('/v1/users/<int:user_id>/block', methods=['POST'])
 @swag_from('docs/block_user.yaml')
@@ -98,6 +103,7 @@ def block_user(user_id):
             status_code=500
         )
 
+
 @app.route('/v1/users/<int:user_id>/unblock', methods=['POST'])
 @swag_from('docs/unblock_user.yaml')
 def unblock_user(user_id):
@@ -121,12 +127,14 @@ def unblock_user(user_id):
             status_code=500
         )
 
+
 @app.errorhandler(404)
 def not_found(error):
     return format_response(
         errors=[{'code': 'NotFound', 'message': 'Resource not found'}],
         status_code=404
     )
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5002)

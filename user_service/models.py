@@ -3,6 +3,7 @@ from datetime import datetime
 
 db = SQLAlchemy()
 
+
 class User(db.Model):
     __tablename__ = 'users'
 
@@ -17,6 +18,7 @@ class User(db.Model):
     favorites = db.relationship('UserFavorite', backref='user', lazy=True, cascade="all, delete-orphan")
     usage_stats = db.relationship('UsageStat', backref='user', lazy=True, cascade="all, delete-orphan")
 
+
 class UserFavorite(db.Model):
     __tablename__ = 'user_favorites'
 
@@ -28,6 +30,7 @@ class UserFavorite(db.Model):
     __table_args__ = (
         db.UniqueConstraint('user_id', 'crypto_symbol', name='unique_user_crypto'),
     )
+
 
 class UsageStat(db.Model):
     __tablename__ = 'usage_stats'

@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 DATA_FILE = os.getenv('DATA_FILE', 'crypto_service/crypto_prices.json')
 
+
 class CryptoParser:
     def __init__(self):
         self.headers = {

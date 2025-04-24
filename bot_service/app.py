@@ -1,4 +1,3 @@
-import telebot
 from telebot.async_telebot import AsyncTeleBot
 from telebot import types
 import aiohttp
@@ -7,7 +6,6 @@ import os
 from dotenv import load_dotenv
 import logging
 from functools import wraps, lru_cache
-from datetime import datetime
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -32,10 +30,6 @@ searching_crypto = {}
 broadcast_mode = {}
 block_mode = {}
 
-
-# ======================
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-# ======================
 
 def check_user_blocked(func):
     @wraps(func)
@@ -265,10 +259,6 @@ async def broadcast_message(message_text):
         logger.error(f"Error in broadcast: {e}")
         return 0, 0
 
-
-# ======================
-# ОБРАБОТЧИКИ КОМАНД
-# ======================
 
 @bot.message_handler(commands=['start'])
 @check_user_blocked
