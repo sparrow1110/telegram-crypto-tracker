@@ -1,0 +1,3 @@
+[tool.black]
+line-length = 120  # Увеличить длину строки
+skip-string-normalization = true  # Не менять кавычки

@@ -3,10 +3,7 @@ from datetime import datetime
 import os
 import requests
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
@@ -27,18 +24,18 @@ class AdminPanel:
             response.raise_for_status()
             stats_data = response.json()['data']
 
-            stats = f"📊 *Статистика бота*\n\n"
-            stats += f"👥 *Пользователи:*\n"
+            stats = "📊 *Статистика бота*\n\n"
+            stats += "👥 *Пользователи:*\n"
             stats += f"• Всего пользователей: {stats_data.get('user_count', 0)}\n"
             stats += f"• Активных за 24 часа: {stats_data.get('active_users_24h', 0)}\n"
             stats += f"• Активных за 7 дней: {stats_data.get('active_users_7d', 0)}\n"
             stats += f"• Заблокированных: {stats_data.get('blocked_count', 0)}\n\n"
-            stats += f"⭐ *Избранное:*\n"
+            stats += "⭐ *Избранное:*\n"
             stats += f"• Всего добавлено в избранное: {stats_data.get('favorites_count', 0)}\n"
 
             commands = stats_data.get('popular_commands', [])
             if commands:
-                stats += f"\n🔄 *Популярные команды (7 дней):*\n"
+                stats += "\n🔄 *Популярные команды (7 дней):*\n"
                 for cmd, count in commands:
                     stats += f"• {cmd}: {count} раз\n"
 
@@ -59,7 +56,7 @@ class AdminPanel:
             if not popular:
                 return "Нет данных о популярных криптовалютах."
 
-            result = f"🔝 *Популярные криптовалюты*\n\n"
+            result = "🔝 *Популярные криптовалюты*\n\n"
             for i, (symbol, count) in enumerate(popular, 1):
                 result += f"{i}. *{symbol}* - {count} пользователей\n"
 
@@ -72,9 +69,7 @@ class AdminPanel:
     def block_user(self, user_id):
         """Block user"""
         try:
-            response = requests.post(
-                f"{self.user_service_url}/v1/users/{user_id}/block"
-            )
+            response = requests.post(f"{self.user_service_url}/v1/users/{user_id}/block")
             response.raise_for_status()
             return response.json()['data'].get('is_blocked', False)
         except requests.exceptions.HTTPError as e:
@@ -91,9 +86,7 @@ class AdminPanel:
     def unblock_user(self, user_id):
         """Unblock user"""
         try:
-            response = requests.post(
-                f"{self.user_service_url}/v1/users/{user_id}/unblock"
-            )
+            response = requests.post(f"{self.user_service_url}/v1/users/{user_id}/unblock")
             response.raise_for_status()
             return not response.json()['data'].get('is_blocked', True)
         except requests.exceptions.HTTPError as e:

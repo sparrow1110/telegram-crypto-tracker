@@ -76,7 +76,8 @@ class CryptoParser:
 
         symbol = symbol.upper()
         if symbol not in data:
-            similar_coins = [coin for coin in data.keys() if coin.upper().startswith(symbol[0]) and coin != "last_updated"]
+            similar_coins = [coin for coin in data.keys()
+                             if coin.upper().startswith(symbol[0]) and coin != "last_updated"]
             return {"error": f"Crypto {symbol} not found", "suggestions": similar_coins[:5]}
 
         coin_info = data[symbol]

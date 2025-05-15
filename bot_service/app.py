@@ -11,10 +11,7 @@ from functools import wraps, lru_cache
 load_dotenv()
 
 # Настройка логирования
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Инициализация бота
@@ -59,8 +56,8 @@ async def register_user(message):
                     'user_id': message.from_user.id,
                     'username': message.from_user.username,
                     'first_name': message.from_user.first_name,
-                    'last_name': message.from_user.last_name
-                }
+                    'last_name': message.from_user.last_name,
+                },
             )
         logger.info(f"User {message.from_user.id} registered")
     except Exception as e:
@@ -70,10 +67,7 @@ async def register_user(message):
 async def log_command(user_id, command):
     try:
         async with aiohttp.ClientSession() as session:
-            await session.post(
-                f"{USER_SERVICE_URL}/command-logs",
-                json={'user_id': user_id, 'command': command}
-            )
+            await session.post(f"{USER_SERVICE_URL}/command-logs", json={'user_id': user_id, 'command': command})
     except Exception as e:
         logger.error(f"Error logging command: {e}")
 
@@ -185,7 +179,7 @@ def format_crypto_message(data, limit=10):
 
     try:
         sorted_coins = sorted(crypto_keys, key=lambda x: data[x].get("rank", 999))
-    except:
+    except Exception as e:
         sorted_coins = crypto_keys
 
     coins_to_display = sorted_coins[:limit]
@@ -274,7 +268,7 @@ async def send_welcome(message):
         "/prices - получить актуальные цены популярных криптовалют\n"
         "/favorites - показать ваши избранные криптовалюты\n"
         "/help - справка по всем командам",
-        reply_markup=keyboard
+        reply_markup=keyboard,
     )
 
 
@@ -318,10 +312,7 @@ async def send_prices(message):
                 pagination_keyboard = create_pagination_keyboard(1, total_pages)
 
                 await bot.send_message(
-                    message.chat.id,
-                    formatted_message,
-                    parse_mode='Markdown',
-                    reply_markup=pagination_keyboard
+                    message.chat.id, formatted_message, parse_mode='Markdown', reply_markup=pagination_keyboard
                 )
     except Exception as e:
         logger.error(f"Error getting prices: {e}")
@@ -345,7 +336,7 @@ async def send_favorites(message):
                     await bot.send_message(
                         message.chat.id,
                         "У вас пока нет избранных криптовалют. Чтобы добавить криптовалюту в ⭐ Избранное, "
-                        "необходимо перейти в раздел 🔍 Поиск криптовалюты и выбрать нужную криптовалюту."
+                        "необходимо перейти в раздел 🔍 Поиск криптовалюты и выбрать нужную криптовалюту.",
                     )
                     return
 
@@ -353,7 +344,7 @@ async def send_favorites(message):
                 response.raise_for_status()
                 crypto_data = (await response.json())['data']
 
-                result = f"⭐ *Ваши избранные криптовалюты* ⭐\n\n"
+                result = "⭐ *Ваши избранные криптовалюты* ⭐\n\n"
                 result += print_coins(crypto_data, favorites)
                 await bot.send_message(message.chat.id, result, parse_mode='Markdown')
 
@@ -378,10 +369,9 @@ async def admin_panel(message):
         keyboard = create_admin_keyboard()
         await bot.send_message(
             message.chat.id,
-            "👨‍💻 *Админ-панель криптобота* 👨‍💻\n\n"
-            "Выберите действие из меню ниже:",
+            "👨‍💻 *Админ-панель криптобота* 👨‍💻\n\n" "Выберите действие из меню ниже:",
             parse_mode='Markdown',
-            reply_markup=keyboard
+            reply_markup=keyboard,
         )
     except Exception as e:
         logger.error(f"Error checking admin status: {e}")
@@ -417,7 +407,7 @@ async def handle_text_messages(message):
         await bot.send_message(
             message.chat.id,
             "Выберите криптовалюту из списка или введите её символ (например, BTC):",
-            reply_markup=keyboard
+            reply_markup=keyboard,
         )
 
     elif text == '❓ Помощь':
@@ -461,7 +451,8 @@ async def show_coin_info(message, symbol):
 
                 if 'error' not in crypto_data:
                     async with session.get(
-                            f"{USER_SERVICE_URL}/users/{message.from_user.id}/favorite-cryptos") as fav_response:
+                        f"{USER_SERVICE_URL}/users/{message.from_user.id}/favorite-cryptos"
+                    ) as fav_response:
                         fav_response.raise_for_status()
                         favorites = (await fav_response.json())['data'].get('favorites', [])
 
@@ -470,18 +461,17 @@ async def show_coin_info(message, symbol):
                         btn_refresh = types.InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{symbol}")
 
                         if is_favorite:
-                            btn_favorite = types.InlineKeyboardButton("❌ Удалить из избранного",
-                                                                      callback_data=f"unfav_{symbol}")
+                            btn_favorite = types.InlineKeyboardButton(
+                                "❌ Удалить из избранного", callback_data=f"unfav_{symbol}"
+                            )
                         else:
-                            btn_favorite = types.InlineKeyboardButton("⭐ Добавить в избранное",
-                                                                      callback_data=f"fav_{symbol}")
+                            btn_favorite = types.InlineKeyboardButton(
+                                "⭐ Добавить в избранное", callback_data=f"fav_{symbol}"
+                            )
 
                         keyboard.add(btn_refresh, btn_favorite)
                         await bot.send_message(
-                            message.chat.id,
-                            message_text,
-                            parse_mode='Markdown',
-                            reply_markup=keyboard
+                            message.chat.id, message_text, parse_mode='Markdown', reply_markup=keyboard
                         )
                 else:
                     await bot.send_message(message.chat.id, message_text)
@@ -563,7 +553,7 @@ async def handle_admin_message(message):
             "Поддерживается форматирование *Markdown*.\n\n"
             "Для отмены рассылки нажмите кнопку 'Отмена'.",
             parse_mode='Markdown',
-            reply_markup=keyboard
+            reply_markup=keyboard,
         )
         return True
 
@@ -578,7 +568,7 @@ async def handle_admin_message(message):
             "Введите ID пользователя, которого нужно заблокировать.\n\n"
             "Для отмены операции нажмите кнопку 'Отмена'.",
             parse_mode='Markdown',
-            reply_markup=keyboard
+            reply_markup=keyboard,
         )
         return True
 
@@ -593,7 +583,7 @@ async def handle_admin_message(message):
             "Введите ID пользователя, которого нужно разблокировать.\n\n"
             "Для отмены операции нажмите кнопку 'Отмена'.",
             parse_mode='Markdown',
-            reply_markup=keyboard
+            reply_markup=keyboard,
         )
         return True
 
@@ -657,7 +647,7 @@ async def handle_callback(call):
                     crypto_keys = [key for key in data.keys() if key != "last_updated"]
                     try:
                         sorted_coins = sorted(crypto_keys, key=lambda x: data[x].get("rank", 999))
-                    except:
+                    except Exception as e:
                         sorted_coins = crypto_keys
 
                     total_pages = (len(crypto_keys) // 10) + (1 if len(crypto_keys) % 10 > 0 else 0)
@@ -674,7 +664,7 @@ async def handle_callback(call):
                         message_id=call.message.message_id,
                         text=message,
                         parse_mode='Markdown',
-                        reply_markup=pagination_keyboard
+                        reply_markup=pagination_keyboard,
                     )
         except Exception as e:
             logger.error(f"Error handling page callback: {e}")
@@ -699,11 +689,13 @@ async def handle_callback(call):
                         btn_refresh = types.InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{symbol}")
 
                         if is_favorite:
-                            btn_favorite = types.InlineKeyboardButton("❌ Удалить из избранного",
-                                                                      callback_data=f"unfav_{symbol}")
+                            btn_favorite = types.InlineKeyboardButton(
+                                "❌ Удалить из избранного", callback_data=f"unfav_{symbol}"
+                            )
                         else:
-                            btn_favorite = types.InlineKeyboardButton("⭐ Добавить в избранное",
-                                                                      callback_data=f"fav_{symbol}")
+                            btn_favorite = types.InlineKeyboardButton(
+                                "⭐ Добавить в избранное", callback_data=f"fav_{symbol}"
+                            )
 
                         keyboard.add(btn_refresh, btn_favorite)
 
@@ -712,7 +704,7 @@ async def handle_callback(call):
                             message_id=call.message.message_id,
                             text=message,
                             parse_mode='Markdown',
-                            reply_markup=keyboard
+                            reply_markup=keyboard,
                         )
         except Exception as e:
             logger.error(f"Error refreshing coin info: {e}")
@@ -725,8 +717,7 @@ async def handle_callback(call):
             async with aiohttp.ClientSession() as session:
                 if action == 'fav':
                     async with session.post(
-                            f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos",
-                            json={'crypto_symbol': symbol}
+                        f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos", json={'crypto_symbol': symbol}
                     ) as response:
                         response.raise_for_status()
                         if response.status == 201:
@@ -735,8 +726,7 @@ async def handle_callback(call):
                             await bot.answer_callback_query(call.id, f"{symbol} уже в избранном")
                 else:
                     async with session.delete(
-                            f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos",
-                            json={'crypto_symbol': symbol}
+                        f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos", json={'crypto_symbol': symbol}
                     ) as response:
                         response.raise_for_status()
                         if response.status == 200:
@@ -758,8 +748,9 @@ async def handle_callback(call):
                 btn_refresh = types.InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{symbol}")
 
                 if is_favorite:
-                    btn_favorite = types.InlineKeyboardButton("❌ Удалить из избранного",
-                                                              callback_data=f"unfav_{symbol}")
+                    btn_favorite = types.InlineKeyboardButton(
+                        "❌ Удалить из избранного", callback_data=f"unfav_{symbol}"
+                    )
                 else:
                     btn_favorite = types.InlineKeyboardButton("⭐ Добавить в избранное", callback_data=f"fav_{symbol}")
 
@@ -770,7 +761,7 @@ async def handle_callback(call):
                     message_id=call.message.message_id,
                     text=get_coin_info_message(crypto_data, symbol),
                     parse_mode='Markdown',
-                    reply_markup=keyboard
+                    reply_markup=keyboard,
                 )
 
         except Exception as e:

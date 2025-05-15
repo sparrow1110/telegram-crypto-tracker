@@ -4,3 +4,4 @@ admin_service/__pycache__/
 bot_service/__pycache__/
 crypto_service/__pycache__/
 user_service/__pycache__/
+__pycache__/
