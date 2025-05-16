@@ -42,7 +42,7 @@ def format_response(data=None, errors=None, meta=None, status_code=200):
 
 def scheduled_parsing():
     while True:
-        parser.parse_crypto_prices()
+        parser.fetch_and_save_crypto_prices()
         time.sleep(300)  # 5 minutes
 
 
