@@ -1,13 +1,9 @@
 import requests
-import json
 import logging
 from datetime import datetime
 from .redis_client import redis_client
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
@@ -42,9 +38,7 @@ class CryptoParser:
             return {"error": error_msg}
 
     def _format_data(self, api_data):
-        formatted = {
-            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
+        formatted = {"last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
         for coin in api_data["data"]:
             formatted[coin["symbol"]] = {
@@ -54,7 +48,7 @@ class CryptoParser:
                 "percent_change_24h": float(coin["percent_change_24h"]),
                 "percent_change_7d": float(coin["percent_change_7d"]),
                 "market_cap_usd": float(coin["market_cap_usd"]),
-                "rank": int(coin["rank"])
+                "rank": int(coin["rank"]),
             }
 
         return formatted
@@ -84,12 +78,6 @@ class CryptoParser:
             return coin_info
 
         # Поиск похожих монет
-        similar_coins = [
-            coin for coin in data.keys()
-            if coin != "last_updated" and coin.upper().startswith(symbol[0])
-        ]
+        similar_coins = [coin for coin in data.keys() if coin != "last_updated" and coin.upper().startswith(symbol[0])]
 
-        return {
-            "error": f"Crypto {symbol} not found",
-            "suggestions": similar_coins[:5]
-        }
+        return {"error": f"Crypto {symbol} not found", "suggestions": similar_coins[:5]}

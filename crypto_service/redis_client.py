@@ -13,6 +13,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 class WSLRedisClient:
     def __init__(self):
         self.redis = None
@@ -63,6 +64,7 @@ class WSLRedisClient:
         #if not self.redis or not self.redis.ping():
             #self._connect()
         #return self.redis
+
 
 # Глобальный экземпляр клиента
 redis_client = WSLRedisClient()

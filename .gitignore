@@ -5,3 +5,7 @@ bot_service/__pycache__/
 crypto_service/__pycache__/
 user_service/__pycache__/
 __pycache__/
+tests/unit/.pytest_cache/
+tests/htmlcov/
+tests/unit/.coverage
+.coverage
