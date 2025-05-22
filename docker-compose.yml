@@ -1,0 +1,113 @@
+services:
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - crypto-bot-network
+
+  postgres:
+    image: postgres:13-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    stop_grace_period: 30s
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - crypto-bot-network
+
+  user_service:
+    build:
+      context: .
+      dockerfile: user_service/Dockerfile
+    ports:
+      - "5001:5001"
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - crypto-bot-network
+
+  crypto_service:
+    build:
+      context: .
+      dockerfile: crypto_service/Dockerfile
+    ports:
+      - "5003:5003"
+    environment:
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_DB=${REDIS_DB}
+      - REDIS_EXPIRE_SECONDS=${REDIS_EXPIRE_SECONDS}
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - crypto-bot-network
+
+  admin_service:
+    build:
+      context: .
+      dockerfile: admin_service/Dockerfile
+    ports:
+      - "5002:5002"
+    environment:
+      - USER_SERVICE_URL=${USER_SERVICE_URL}
+      - CRYPTO_SERVICE_URL=${CRYPTO_SERVICE_URL}
+      - ADMIN_IDS=${ADMIN_IDS}
+    depends_on:
+      - user_service
+      - crypto_service
+    restart: unless-stopped
+    networks:
+      - crypto-bot-network
+
+  bot_service:
+    build:
+      context: .
+      dockerfile: bot_service/Dockerfile
+    environment:
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - USER_SERVICE_URL=${USER_SERVICE_URL}
+      - ADMIN_SERVICE_URL=${ADMIN_SERVICE_URL}
+      - CRYPTO_SERVICE_URL=${CRYPTO_SERVICE_URL}
+      - ADMIN_IDS=${ADMIN_IDS}
+      - USER_SERVICE_PORT=${USER_SERVICE_PORT}
+      - ADMIN_SERVICE_PORT=${ADMIN_SERVICE_PORT}
+      - CRYPTO_SERVICE_PORT=${CRYPTO_SERVICE_PORT}
+    depends_on:
+      - user_service
+      - admin_service
+      - crypto_service
+    restart: unless-stopped
+    networks:
+      - crypto-bot-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  crypto-bot-network:
+    driver: bridge

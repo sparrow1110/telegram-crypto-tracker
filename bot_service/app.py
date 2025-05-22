@@ -3,12 +3,10 @@ from telebot import types
 import aiohttp
 import asyncio
 import os
-from dotenv import load_dotenv
 import logging
 from functools import wraps, lru_cache
+from datetime import datetime, timedelta
 
-# Загрузка переменных окружения
-load_dotenv()
 
 # Настройка логирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -18,9 +16,9 @@ logger = logging.getLogger(__name__)
 bot = AsyncTeleBot(os.getenv('TELEGRAM_TOKEN'))
 
 # URL сервисов
-USER_SERVICE_URL = f"http://localhost:{os.getenv('USER_SERVICE_PORT', '5001')}/v1"
-ADMIN_SERVICE_URL = f"http://localhost:{os.getenv('ADMIN_SERVICE_PORT', '5002')}/v1"
-CRYPTO_SERVICE_URL = f"http://localhost:{os.getenv('CRYPTO_SERVICE_PORT', '5003')}/v1"
+USER_SERVICE_URL = f"{os.getenv('USER_SERVICE_URL', 'http://user_service:5001')}/v1"
+ADMIN_SERVICE_URL = f"{os.getenv('ADMIN_SERVICE_URL', 'http://admin_service:5002')}/v1"
+CRYPTO_SERVICE_URL = f"{os.getenv('CRYPTO_SERVICE_URL', 'http://crypto_service:5003')}/v1"
 
 # Глобальные состояния
 searching_crypto = {}
@@ -174,12 +172,18 @@ def format_crypto_message(data, limit=10):
     if not data or "last_updated" not in data:
         return "Данные о ценах недоступны. Попробуйте позже."
 
-    message = f"💰 *Актуальные цены криптовалют* 💰\n_(обновлено: {data['last_updated']})_\n\n"
+    # Преобразуем время из UTC в UTC+3
+    utc_time = datetime.strptime(data['last_updated'], "%Y-%m-%d %H:%M:%S")
+    local_time = utc_time + timedelta(hours=3)
+    local_time_str = local_time.strftime("%Y-%m-%d %H:%M:%S")
+
+    message = f"💰 *Актуальные цены криптовалют* 💰\n_(обновлено: {local_time_str})_\n\n"
     crypto_keys = [key for key in data.keys() if key != "last_updated"]
 
     try:
         sorted_coins = sorted(crypto_keys, key=lambda x: data[x].get("rank", 999))
     except Exception as e:
+        logger.error(f"Error logging command: {e}")
         sorted_coins = crypto_keys
 
     coins_to_display = sorted_coins[:limit]
@@ -202,8 +206,11 @@ def get_coin_info_message(data, symbol):
 
     values = data[symbol]
     coin_name = values.get("name", symbol)
+    utc_time = datetime.strptime(data['last_updated'], "%Y-%m-%d %H:%M:%S")
+    local_time = utc_time + timedelta(hours=3)
+    local_time_str = local_time.strftime("%Y-%m-%d %H:%M:%S")
     message = f"💰 *{symbol}* ({coin_name})\n"
-    message += f"_(данные на: {data['last_updated']})_\n\n"
+    message += f"_(данные на: {local_time_str})_\n\n"
 
     price = values.get("price_usd", 0)
     message += f"*Цена:* ${price:,.6f}\n\n"
@@ -649,12 +656,16 @@ async def handle_callback(call):
                         sorted_coins = sorted(crypto_keys, key=lambda x: data[x].get("rank", 999))
                     except Exception as e:
                         sorted_coins = crypto_keys
+                        logger.error(f"Error logging command: {e}")
 
                     total_pages = (len(crypto_keys) // 10) + (1 if len(crypto_keys) % 10 > 0 else 0)
                     start_index = (page - 1) * 10
                     end_index = min(start_index + 10, len(crypto_keys))
 
-                    message = f"💰 *Криптовалюты (страница {page} из {total_pages})* 💰\n_(обновлено: {data['last_updated']})_\n\n"
+                    message = (
+                        f"💰 *Криптовалюты (страница {page} из {total_pages})* 💰\n_(обновлено:"
+                        f" {data['last_updated']})_\n\n"
+                    )
                     message += print_coins(data, sorted_coins[start_index:end_index])
 
                     pagination_keyboard = create_pagination_keyboard(page, total_pages)
@@ -772,9 +783,20 @@ async def handle_callback(call):
 
 
 async def main():
-    await bot.polling(non_stop=True)
+    while True:
+        try:
+            await bot.polling(non_stop=True, timeout=60)
+        except Exception as e:
+            logger.error(f"Bot polling error: {e}")
+            await asyncio.sleep(5)  # Задержка перед перезапуском
+            continue
 
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")

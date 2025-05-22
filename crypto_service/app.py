@@ -4,25 +4,21 @@ from flasgger import Swagger, swag_from
 from .price_cache import get_cached_prices, get_cached_coin_info
 import time
 import threading
-from dotenv import load_dotenv
-
-load_dotenv()
 
 app = Flask(__name__)
-swagger = Swagger(app, template={
-    "swagger": "2.0",
-    "info": {
-        "title": "Crypto Service API",
-        "description": "API для получения данных о криптовалютах",
-        "version": "1.0.0"
+swagger = Swagger(
+    app,
+    template={
+        "swagger": "2.0",
+        "info": {
+            "title": "Crypto Service API",
+            "description": "API для получения данных о криптовалютах",
+            "version": "1.0.0",
+        },
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
     },
-    "consumes": [
-        "application/json"
-    ],
-    "produces": [
-        "application/json"
-    ]
-})
+)
 parser = CryptoParser()
 
 
@@ -53,15 +49,11 @@ def get_prices():
         data = get_cached_prices()
         if not data:
             return format_response(
-                errors=[{'code': 'ServiceUnavailable', 'message': 'Failed to get crypto prices'}],
-                status_code=503
+                errors=[{'code': 'ServiceUnavailable', 'message': 'Failed to get crypto prices'}], status_code=503
             )
         return format_response(data=data)
     except Exception as e:
-        return format_response(
-            errors=[{'code': 'InternalServerError', 'message': str(e)}],
-            status_code=500
-        )
+        return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
 
 
 @app.route('/v1/crypto-prices/<string:symbol>', methods=['GET'])
@@ -70,34 +62,24 @@ def get_coin(symbol):
     try:
         coin_info = get_cached_coin_info(symbol)
         if not coin_info:
-            return format_response(
-                errors=[{'code': 'NotFound', 'message': 'Crypto not found'}],
-                status_code=404
-            )
+            return format_response(errors=[{'code': 'NotFound', 'message': 'Crypto not found'}], status_code=404)
         if 'error' in coin_info:
             return format_response(
-                data=None,
-                errors=[{
-                    'code': 'NotFound',
-                    'message': coin_info['error']
-                }],
-                status_code=404
+                data=None, errors=[{'code': 'NotFound', 'message': coin_info['error']}], status_code=404
             )
         return format_response(data=coin_info)
     except Exception as e:
-        return format_response(
-            errors=[{'code': 'InternalServerError', 'message': str(e)}],
-            status_code=500
-        )
+        return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
 
 
 @app.errorhandler(404)
 def not_found(error):
-    return format_response(
-        errors=[{'code': 'NotFound', 'message': 'Resource not found'}],
-        status_code=404
-    )
+    return format_response(errors=[{'code': 'NotFound', 'message': 'Resource not found'}], status_code=404)
 
+
+scheduler_thread = threading.Thread(target=scheduled_parsing)
+scheduler_thread.daemon = True
+scheduler_thread.start()
 
 if __name__ == '__main__':
     # Start background thread for scheduled parsing
