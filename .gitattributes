@@ -1,0 +1,2 @@
+user_service/wait-for-postgres.sh text eol=lf
+*.sh text eol=lf
