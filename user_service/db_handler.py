@@ -3,10 +3,7 @@ from sqlalchemy.exc import SQLAlchemyError
 import logging
 from datetime import datetime, timedelta
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
@@ -22,7 +19,7 @@ class DatabaseManager:
                     username=username,
                     first_name=first_name,
                     last_name=last_name,
-                    last_activity=datetime.utcnow()
+                    last_activity=datetime.utcnow(),
                 )
                 db.session.add(user)
                 is_new = True
@@ -58,19 +55,13 @@ class DatabaseManager:
             if not user_exists:
                 return None  # Возвращаем None, если пользователь не найден
             # Check if already exists
-            exists = UserFavorite.query.filter_by(
-                user_id=user_id,
-                crypto_symbol=crypto_symbol.upper()
-            ).first()
+            exists = UserFavorite.query.filter_by(user_id=user_id, crypto_symbol=crypto_symbol.upper()).first()
 
             if exists:
                 logger.info(f"Crypto {crypto_symbol} already in favorites for user {user_id}")
                 return False
 
-            favorite = UserFavorite(
-                user_id=user_id,
-                crypto_symbol=crypto_symbol.upper()
-            )
+            favorite = UserFavorite(user_id=user_id, crypto_symbol=crypto_symbol.upper())
             db.session.add(favorite)
             db.session.commit()
             logger.info(f"Added {crypto_symbol} to favorites for user {user_id}")
@@ -82,10 +73,7 @@ class DatabaseManager:
 
     def remove_favorite_crypto(self, user_id, crypto_symbol):
         try:
-            deleted = UserFavorite.query.filter_by(
-                user_id=user_id,
-                crypto_symbol=crypto_symbol.upper()
-            ).delete()
+            deleted = UserFavorite.query.filter_by(user_id=user_id, crypto_symbol=crypto_symbol.upper()).delete()
 
             db.session.commit()
             if deleted:
@@ -127,10 +115,13 @@ class DatabaseManager:
 
     def get_popular_cryptos(self, limit=5):
         try:
-            result = db.session.query(
-                UserFavorite.crypto_symbol,
-                db.func.count(UserFavorite.crypto_symbol).label('count')
-            ).group_by(UserFavorite.crypto_symbol).order_by(db.desc('count')).limit(limit).all()
+            result = (
+                db.session.query(UserFavorite.crypto_symbol, db.func.count(UserFavorite.crypto_symbol).label('count'))
+                .group_by(UserFavorite.crypto_symbol)
+                .order_by(db.desc('count'))
+                .limit(limit)
+                .all()
+            )
 
             return [(row.crypto_symbol, row.count) for row in result]
         except SQLAlchemyError as e:
@@ -140,11 +131,14 @@ class DatabaseManager:
     def get_popular_commands(self):
         try:
             week_ago = datetime.utcnow() - timedelta(days=7)
-            result = db.session.query(
-                UsageStat.command,
-                db.func.count(UsageStat.command).label('count')
-            ).filter(UsageStat.timestamp >= week_ago).group_by(UsageStat.command).order_by(db.desc('count')).limit(
-                5).all()
+            result = (
+                db.session.query(UsageStat.command, db.func.count(UsageStat.command).label('count'))
+                .filter(UsageStat.timestamp >= week_ago)
+                .group_by(UsageStat.command)
+                .order_by(db.desc('count'))
+                .limit(5)
+                .all()
+            )
 
             return [(row.command, row.count) for row in result]
         except SQLAlchemyError as e:
@@ -153,7 +147,7 @@ class DatabaseManager:
 
     def get_unblocked_users(self):
         try:
-            users = User.query.filter(User.is_blocked is False).all()
+            users = User.query.filter(User.is_blocked == False).all()
             return [user.user_id for user in users]
         except SQLAlchemyError as e:
             logger.error(f"Error getting unblocked users: {e}")
@@ -161,7 +155,7 @@ class DatabaseManager:
 
     def get_blocked_users_count(self):
         try:
-            return User.query.filter(User.is_blocked is True).count()
+            return User.query.filter(User.is_blocked == True).count()
         except SQLAlchemyError as e:
             logger.error(f"Error counting blocked users: {e}")
             return 0
