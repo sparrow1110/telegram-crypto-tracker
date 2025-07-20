@@ -9,3 +9,4 @@ tests/unit/.pytest_cache/
 tests/htmlcov/
 tests/unit/.coverage
 .coverage
+.idea
