@@ -1,70 +1,60 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from telebot import types
-from bot_service.app import bot
+from aiogram import types
+from bot_service.app import send_welcome, send_help
 
 
 @pytest.fixture
 def mock_message():
-    message = MagicMock()
-    message.from_user = types.User(
-        id=123,
-        is_bot=False,
-        username='testuser',
-        first_name='Test',
-        last_name='User'
-    )
+    message = MagicMock(spec=types.Message)
+    message.from_user = types.User(id=123, is_bot=False, username='testuser', first_name='Test', last_name='User')
     message.chat = types.Chat(id=123, type='private')
     message.text = '/start'
+    message.answer = AsyncMock()  # Мок для метода answer
     return message
 
 
 @pytest.mark.asyncio
 async def test_send_welcome(mock_message):
     """Test /start command handler"""
-    # Создаем асинхронные моки
-    mock_register = AsyncMock()
-    mock_log = AsyncMock()
-    mock_send = AsyncMock()
-
     with (
-        patch('bot_service.app.register_user', new=mock_register),
-        patch('bot_service.app.log_command', new=mock_log),
-        patch('bot_service.app.bot.send_message', new=mock_send)
+        patch('bot_service.app.register_user', new_callable=AsyncMock) as mock_register,
+        patch('bot_service.app.log_command', new_callable=AsyncMock) as mock_log,
     ):
-        # Имитируем вызов обработчика
-        handler = bot.message_handlers[0]['function']
-        await handler(mock_message)
+        # Вызываем обработчик напрямую
+        await send_welcome(mock_message)
 
         # Проверяем вызовы
         mock_register.assert_awaited_once_with(mock_message)
         mock_log.assert_awaited_once_with(mock_message.from_user.id, '/start')
-        mock_send.assert_awaited_once()
+        mock_message.answer.assert_awaited_once()
 
-        # Проверяем аргументы send_message
-        args, kwargs = mock_send.call_args
-        assert 'Привет! Я бот для отслеживания цен криптовалют' in args[1]
+        # Проверяем аргументы ответа
+        args, kwargs = mock_message.answer.call_args
+        assert 'Привет! Я бот для отслеживания цен криптовалют' in args[0]
+        assert 'parse_mode' in kwargs
+        assert kwargs['parse_mode'] == 'Markdown'
 
 
 @pytest.mark.asyncio
 async def test_send_help(mock_message):
     """Test /help command handler"""
-    mock_register = AsyncMock()
-    mock_log = AsyncMock()
-    mock_send = AsyncMock()
-
     with (
-        patch('bot_service.app.register_user', new=mock_register),
-        patch('bot_service.app.log_command', new=mock_log),
-        patch('bot_service.app.bot.send_message', new=mock_send)
+        patch('bot_service.app.register_user', new_callable=AsyncMock) as mock_register,
+        patch('bot_service.app.log_command', new_callable=AsyncMock) as mock_log,
     ):
         mock_message.text = '/help'
-        handler = bot.message_handlers[1]['function']
-        await handler(mock_message)
 
+        # Вызываем обработчик напрямую
+        await send_help(mock_message)
+
+        # Проверяем вызовы
         mock_register.assert_awaited_once_with(mock_message)
         mock_log.assert_awaited_once_with(mock_message.from_user.id, '/help')
-        mock_send.assert_awaited_once()
+        mock_message.answer.assert_awaited_once()
 
-        args, kwargs = mock_send.call_args
-        assert 'Помощь по использованию бота' in args[1]
+        # Проверяем аргументы ответа
+        args, kwargs = mock_message.answer.call_args
+        assert 'Помощь по использованию бота' in args[0]
+        assert 'parse_mode' in kwargs
+        assert kwargs['parse_mode'] == 'Markdown'
