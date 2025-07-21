@@ -2,6 +2,9 @@ from flask import Flask, jsonify, request
 from flasgger import Swagger, swag_from
 from .admin_panel import AdminPanel
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 swagger = Swagger(
