@@ -1,14 +1,18 @@
 import pytest
+import os
 from unittest.mock import Mock, patch
 from admin_service.admin_panel import AdminPanel
-import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 @pytest.fixture
 def admin_panel():
     return AdminPanel(
         user_service_url='http://user-service',
-        crypto_service_url='http://crypto-service'
+        crypto_service_url='http://crypto-service',
+        api_token=os.getenv('API_TOKEN', 'your-secret-api-token'),  # Use env variable with fallback for tests
     )
 
 
@@ -31,13 +35,13 @@ def test_get_bot_stats(mock_get, admin_panel):
             'active_users_7d': 80,
             'blocked_count': 5,
             'favorites_count': 200,
-            'popular_commands': [('/start', 50), ('/help', 30)]
+            'popular_commands': [('/start', 50), ('/help', 30)],
         }
     }
     mock_response.raise_for_status.return_value = None
     mock_get.return_value = mock_response
 
-    stats = admin_panel.get_bot_stats()
+    stats = admin_panel.get_bot_stats(123)  # Pass requester_id as required
 
     assert '📊 *Статистика бота*' in stats
     assert 'Всего пользователей: 100' in stats
@@ -52,7 +56,7 @@ def test_block_user(mock_post, admin_panel):
     mock_response.raise_for_status.return_value = None
     mock_post.return_value = mock_response
 
-    result = admin_panel.block_user(123)
+    result = admin_panel.block_user(123, 456)  # Pass requester_id as required
     assert result is True
 
 
@@ -63,5 +67,5 @@ def test_unblock_user(mock_post, admin_panel):
     mock_response.raise_for_status.return_value = None
     mock_post.return_value = mock_response
 
-    result = admin_panel.unblock_user(123)
+    result = admin_panel.unblock_user(123, 456)  # Pass requester_id as required
     assert result is True

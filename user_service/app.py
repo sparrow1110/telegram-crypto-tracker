@@ -1,9 +1,12 @@
 import logging
 from flask import Flask, jsonify, request
 from flasgger import Swagger, swag_from
-from user_service.models import db  # Исправленный импорт
+from user_service.models import db
 from user_service.db_handler import DatabaseManager
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -60,10 +63,29 @@ def format_response(data=None, errors=None, meta=None, status_code=200):
     return jsonify(response), status_code
 
 
+API_TOKEN = os.getenv('API_TOKEN', 'your-secret-api-token')
+
+
+def verify_token():
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    logger.info(f"Received token: '{token}', Expected: '{API_TOKEN}'")
+    return token == API_TOKEN
+
+
 def register_routes(app):
     @app.route('/v1/stats', methods=['GET'])
     @swag_from('docs/get_stats.yaml')
     def get_stats():
+        if not verify_token():
+            return format_response(
+                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
+            )
+        data = request.get_json(silent=True) or {}
+        requester_id = data.get('requester_id')
+        if not requester_id or db_manager.is_blocked(requester_id):
+            return format_response(
+                errors=[{'code': 'Forbidden', 'message': 'User is blocked or invalid requester'}], status_code=403
+            )
         try:
             stats = {
                 'user_count': db_manager.get_user_count(),
@@ -80,6 +102,10 @@ def register_routes(app):
     @app.route('/v1/users', methods=['POST'])
     @swag_from('docs/register_user.yaml')
     def register_user():
+        if not verify_token():
+            return format_response(
+                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
+            )
         data = request.json
         try:
             success, is_new = db_manager.register_user(
@@ -99,7 +125,16 @@ def register_routes(app):
     @app.route('/v1/command-logs', methods=['POST'])
     @swag_from('docs/log_command.yaml')
     def log_command():
+        if not verify_token():
+            return format_response(
+                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
+            )
         data = request.json
+        requester_id = data.get('requester_id')
+        if not requester_id or db_manager.is_blocked(requester_id):
+            return format_response(
+                errors=[{'code': 'Forbidden', 'message': 'User is blocked or invalid requester'}], status_code=403
+            )
         try:
             success = db_manager.log_command(data['user_id'], data['command'])
             if success:
@@ -113,7 +148,16 @@ def register_routes(app):
     @app.route('/v1/users/<int:user_id>/favorite-cryptos', methods=['POST'])
     @swag_from('docs/add_favorite.yaml')
     def add_favorite(user_id):
+        if not verify_token():
+            return format_response(
+                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
+            )
         data = request.json
+        requester_id = data.get('requester_id')
+        if not requester_id or db_manager.is_blocked(requester_id):
+            return format_response(
+                errors=[{'code': 'Forbidden', 'message': 'User is blocked or invalid requester'}], status_code=403
+            )
         try:
             success = db_manager.add_favorite_crypto(user_id, data['crypto_symbol'])
             if success:
@@ -131,7 +175,16 @@ def register_routes(app):
     @app.route('/v1/users/<int:user_id>/favorite-cryptos', methods=['DELETE'])
     @swag_from('docs/remove_favorite.yaml')
     def remove_favorite(user_id):
+        if not verify_token():
+            return format_response(
+                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
+            )
         data = request.json
+        requester_id = data.get('requester_id')
+        if not requester_id or db_manager.is_blocked(requester_id):
+            return format_response(
+                errors=[{'code': 'Forbidden', 'message': 'User is blocked or invalid requester'}], status_code=403
+            )
         try:
             if not data or 'crypto_symbol' not in data:
                 return format_response(
@@ -158,6 +211,16 @@ def register_routes(app):
     @app.route('/v1/users/<int:user_id>/favorite-cryptos', methods=['GET'])
     @swag_from('docs/get_favorites.yaml')
     def get_favorites(user_id):
+        if not verify_token():
+            return format_response(
+                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
+            )
+        data = request.get_json(silent=True) or {}
+        requester_id = data.get('requester_id')
+        if not requester_id or db_manager.is_blocked(requester_id):
+            return format_response(
+                errors=[{'code': 'Forbidden', 'message': 'User is blocked or invalid requester'}], status_code=403
+            )
         try:
             favorites = db_manager.get_favorite_cryptos(user_id)
             if favorites is None:
@@ -169,6 +232,16 @@ def register_routes(app):
     @app.route('/v1/stats/popular-cryptos', methods=['GET'])
     @swag_from('docs/popular_cryptos.yaml')
     def popular_cryptos():
+        if not verify_token():
+            return format_response(
+                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
+            )
+        data = request.get_json(silent=True) or {}
+        requester_id = data.get('requester_id')
+        if not requester_id or db_manager.is_blocked(requester_id):
+            return format_response(
+                errors=[{'code': 'Forbidden', 'message': 'User is blocked or invalid requester'}], status_code=403
+            )
         try:
             limit = request.args.get('limit', default=5, type=int)
             cryptos = db_manager.get_popular_cryptos(limit)
@@ -179,6 +252,10 @@ def register_routes(app):
     @app.route('/v1/users/unblocked', methods=['GET'])
     @swag_from('docs/unblocked_users.yaml')
     def unblocked_users():
+        if not verify_token():
+            return format_response(
+                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
+            )
         try:
             users = db_manager.get_unblocked_users()
             return format_response(data={'users': users})
@@ -188,6 +265,10 @@ def register_routes(app):
     @app.route('/v1/users/<int:user_id>/block', methods=['POST'])
     @swag_from('docs/block_user.yaml')
     def block_user(user_id):
+        if not verify_token():
+            return format_response(
+                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
+            )
         try:
             success = db_manager.block_user(user_id)
             if success:
@@ -203,6 +284,10 @@ def register_routes(app):
     @app.route('/v1/users/<int:user_id>/unblock', methods=['POST'])
     @swag_from('docs/unblock_user.yaml')
     def unblock_user(user_id):
+        if not verify_token():
+            return format_response(
+                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
+            )
         try:
             success = db_manager.unblock_user(user_id)
             if success:
@@ -218,6 +303,10 @@ def register_routes(app):
     @app.route('/v1/users/<int:user_id>/block-status', methods=['GET'])
     @swag_from('docs/is_blocked.yaml')
     def is_blocked(user_id):
+        if not verify_token():
+            return format_response(
+                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
+            )
         try:
             blocked = db_manager.is_blocked(user_id)
             if blocked is None:

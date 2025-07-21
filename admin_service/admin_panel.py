@@ -8,19 +8,22 @@ logger = logging.getLogger(__name__)
 
 
 class AdminPanel:
-    def __init__(self, user_service_url, crypto_service_url):
+    def __init__(self, user_service_url, crypto_service_url, api_token):
         self.user_service_url = user_service_url
         self.crypto_service_url = crypto_service_url
+        self.api_token = api_token
+        self.headers = {'Authorization': f'Bearer {self.api_token}'}
 
     def is_admin(self, user_id):
         """Check if user is admin"""
         return str(user_id) in os.getenv('ADMIN_IDS', '').split(',')
 
-    def get_bot_stats(self):
+    def get_bot_stats(self, requester_id):
         """Get bot statistics"""
         try:
-            # Get all stats with one request
-            response = requests.get(f"{self.user_service_url}/v1/stats")
+            response = requests.get(
+                f"{self.user_service_url}/v1/stats", headers=self.headers, json={'requester_id': requester_id}
+            )
             response.raise_for_status()
             stats_data = response.json()['data']
 
@@ -40,16 +43,19 @@ class AdminPanel:
                     stats += f"• {cmd}: {count} раз\n"
 
             stats += f"\n🕒 *Актуально на:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-
             return stats
         except Exception as e:
             logger.error(f"Error getting stats: {e}")
             raise
 
-    def get_popular_cryptos(self):
+    def get_popular_cryptos(self, requester_id):
         """Get popular cryptocurrencies"""
         try:
-            response = requests.get(f"{self.user_service_url}/v1/stats/popular-cryptos")
+            response = requests.get(
+                f"{self.user_service_url}/v1/stats/popular-cryptos",
+                headers=self.headers,
+                json={'requester_id': requester_id},
+            )
             response.raise_for_status()
             popular = response.json()['data'].get('cryptos', [])
 
@@ -66,10 +72,14 @@ class AdminPanel:
             logger.error(f"Error getting popular cryptos: {e}")
             raise
 
-    def block_user(self, user_id):
+    def block_user(self, user_id, requester_id):
         """Block user"""
         try:
-            response = requests.post(f"{self.user_service_url}/v1/users/{user_id}/block")
+            response = requests.post(
+                f"{self.user_service_url}/v1/users/{user_id}/block",
+                headers=self.headers,
+                json={'requester_id': requester_id},
+            )
             response.raise_for_status()
             return response.json()['data'].get('is_blocked', False)
         except requests.exceptions.HTTPError as e:
@@ -83,10 +93,14 @@ class AdminPanel:
             logger.error(f"Error blocking user {user_id}: {e}")
             raise
 
-    def unblock_user(self, user_id):
+    def unblock_user(self, user_id, requester_id):
         """Unblock user"""
         try:
-            response = requests.post(f"{self.user_service_url}/v1/users/{user_id}/unblock")
+            response = requests.post(
+                f"{self.user_service_url}/v1/users/{user_id}/unblock",
+                headers=self.headers,
+                json={'requester_id': requester_id},
+            )
             response.raise_for_status()
             return not response.json()['data'].get('is_blocked', True)
         except requests.exceptions.HTTPError as e:

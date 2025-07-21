@@ -2,7 +2,7 @@ import logging
 import os
 import asyncio
 from datetime import datetime, timedelta
-from functools import wraps, lru_cache
+from functools import lru_cache
 import aiohttp
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -23,6 +23,13 @@ dp = Dispatcher(bot, storage=storage)
 USER_SERVICE_URL = f"{os.getenv('USER_SERVICE_URL', 'http://user_service:5001')}/v1"
 ADMIN_SERVICE_URL = f"{os.getenv('ADMIN_SERVICE_URL', 'http://admin_service:5002')}/v1"
 CRYPTO_SERVICE_URL = f"{os.getenv('CRYPTO_SERVICE_URL', 'http://crypto_service:5003')}/v1"
+API_TOKEN = os.getenv('API_TOKEN', 'your-secret-api-token')
+
+# Глобальная сессия для HTTP-запросов
+client_session = None
+
+# Заголовки для запросов
+DEFAULT_HEADERS = {'Authorization': f'Bearer {API_TOKEN}', 'Content-Type': 'application/json'}
 
 
 # Состояния FSM
@@ -33,41 +40,33 @@ class BotStates(StatesGroup):
     UNBLOCK_MODE = State()
 
 
-# Декоратор проверки блокировки
-def check_user_blocked():
-    def decorator(handler):
-        @wraps(handler)
-        async def wrapped(message: types.Message, *args, **kwargs):
-            user_id = message.from_user.id
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(f"{USER_SERVICE_URL}/users/{user_id}/block-status") as response:
-                        response.raise_for_status()
-                        if (await response.json())['data'].get('is_blocked', False):
-                            await message.answer("Вы заблокированы администратором.")
-                            return
-                        return await handler(message, *args, **kwargs)
-            except Exception as e:
-                logger.error(f"Error checking block status: {e}")
-                return await handler(message, *args, **kwargs)
-
-        return wrapped
-
-    return decorator
+async def check_user_blocked(user_id):
+    """Check if user is blocked via user_service API"""
+    try:
+        async with client_session.get(
+            f"{USER_SERVICE_URL}/users/{user_id}/block-status", json={'requester_id': user_id}
+        ) as response:
+            response.raise_for_status()
+            return (await response.json())['data'].get('is_blocked', False)
+    except Exception as e:
+        logger.error(f"Error checking block status for user {user_id}: {e}")
+        return False  # Если ошибка, считаем пользователя незаблокированным
 
 
 async def register_user(message: types.Message):
     try:
-        async with aiohttp.ClientSession() as session:
-            await session.post(
-                f"{USER_SERVICE_URL}/users",
-                json={
-                    'user_id': message.from_user.id,
-                    'username': message.from_user.username,
-                    'first_name': message.from_user.first_name,
-                    'last_name': message.from_user.last_name,
-                },
-            )
+        async with client_session.post(
+            f"{USER_SERVICE_URL}/users",
+            json={
+                'user_id': message.from_user.id,
+                'username': message.from_user.username,
+                'first_name': message.from_user.first_name,
+                'last_name': message.from_user.last_name,
+                'requester_id': message.from_user.id,
+            },
+            headers=DEFAULT_HEADERS,
+        ) as response:
+            response.raise_for_status()
         logger.info(f"User {message.from_user.id} registered")
     except Exception as e:
         logger.error(f"Error registering user: {e}")
@@ -75,8 +74,12 @@ async def register_user(message: types.Message):
 
 async def log_command(user_id: int, command: str):
     try:
-        async with aiohttp.ClientSession() as session:
-            await session.post(f"{USER_SERVICE_URL}/command-logs", json={'user_id': user_id, 'command': command})
+        async with client_session.post(
+            f"{USER_SERVICE_URL}/command-logs",
+            json={'user_id': user_id, 'command': command, 'requester_id': user_id},
+            headers=DEFAULT_HEADERS,
+        ) as response:
+            response.raise_for_status()
     except Exception as e:
         logger.error(f"Error logging command: {e}")
 
@@ -124,7 +127,18 @@ def create_popular_coins_keyboard():
         types.KeyboardButton('Ripple (XRP)'),
         types.KeyboardButton('Cardano (ADA)'),
         types.KeyboardButton('Dogecoin (DOGE)'),
-        types.KeyboardButton('🔙 Назад'),
+        types.KeyboardButton('🔙 Завершить поиск'),
+    ]
+    keyboard.add(*buttons)
+    return keyboard
+
+
+@lru_cache(maxsize=10)
+def create_search_control_keyboard():
+    keyboard = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    buttons = [
+        types.KeyboardButton('🔍 Продолжить поиск'),
+        types.KeyboardButton('🔙 Завершить поиск'),
     ]
     keyboard.add(*buttons)
     return keyboard
@@ -246,10 +260,9 @@ def get_coin_info_message(data, symbol):
 
 async def broadcast_message(message_text: str):
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{USER_SERVICE_URL}/users/unblocked") as response:
-                response.raise_for_status()
-                users = (await response.json())['data'].get('users', [])
+        async with client_session.get(f"{USER_SERVICE_URL}/users/unblocked", headers=DEFAULT_HEADERS) as response:
+            response.raise_for_status()
+            users = (await response.json())['data'].get('users', [])
 
         sent_count = 0
         failed_count = 0
@@ -269,8 +282,11 @@ async def broadcast_message(message_text: str):
 
 
 @dp.message_handler(commands=['start'])
-@check_user_blocked()
 async def send_welcome(message: types.Message):
+    user_id = message.from_user.id
+    if await check_user_blocked(user_id):
+        await message.answer("🚫 Ваш аккаунт заблокирован. Обратитесь к администратору.")
+        return
     await register_user(message)
     await log_command(message.from_user.id, '/start')
     keyboard = create_main_keyboard(message.from_user.id)
@@ -286,8 +302,11 @@ async def send_welcome(message: types.Message):
 
 
 @dp.message_handler(commands=['help'])
-@check_user_blocked()
 async def send_help(message: types.Message):
+    user_id = message.from_user.id
+    if await check_user_blocked(user_id):
+        await message.answer("🚫 Ваш аккаунт заблокирован. Обратитесь к администратору.")
+        return
     await register_user(message)
     await log_command(message.from_user.id, '/help')
     help_text = (
@@ -307,65 +326,74 @@ async def send_help(message: types.Message):
 
 
 @dp.message_handler(commands=['prices'])
-@check_user_blocked()
 async def send_prices(message: types.Message):
+    user_id = message.from_user.id
+    if await check_user_blocked(user_id):
+        await message.answer("🚫 Ваш аккаунт заблокирован. Обратитесь к администратору.")
+        return
     await register_user(message)
     await log_command(message.from_user.id, '/prices')
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{CRYPTO_SERVICE_URL}/crypto-prices") as response:
-                response.raise_for_status()
-                data = (await response.json())['data']
-                formatted_message = format_crypto_message(data)
-                crypto_keys = [key for key in data.keys() if key != "last_updated"]
-                total_pages = (len(crypto_keys) // 10) + (1 if len(crypto_keys) % 10 > 0 else 0)
-                pagination_keyboard = create_pagination_keyboard(1, total_pages)
-                await message.answer(formatted_message, parse_mode='Markdown', reply_markup=pagination_keyboard)
+        async with client_session.get(f"{CRYPTO_SERVICE_URL}/crypto-prices", headers=DEFAULT_HEADERS) as response:
+            response.raise_for_status()
+            data = (await response.json())['data']
+            formatted_message = format_crypto_message(data)
+            crypto_keys = [key for key in data.keys() if key != "last_updated"]
+            total_pages = (len(crypto_keys) // 10) + (1 if len(crypto_keys) % 10 > 0 else 0)
+            pagination_keyboard = create_pagination_keyboard(1, total_pages)
+            await message.answer(formatted_message, parse_mode='Markdown', reply_markup=pagination_keyboard)
     except Exception as e:
         logger.error(f"Error getting prices: {e}")
         await message.answer("Ошибка при получении данных о ценах. Попробуйте позже.")
 
 
 @dp.message_handler(commands=['favorites'])
-@check_user_blocked()
 async def send_favorites(message: types.Message):
+    user_id = message.from_user.id
+    if await check_user_blocked(user_id):
+        await message.answer("🚫 Ваш аккаунт заблокирован. Обратитесь к администратору.")
+        return
     await register_user(message)
     await log_command(message.from_user.id, '/favorites')
     user_id = message.from_user.id
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos") as response:
-                response.raise_for_status()
-                favorites = (await response.json())['data'].get('favorites', [])
-                if not favorites:
-                    await message.answer(
-                        "У вас пока нет избранных криптовалют. Чтобы добавить криптовалюту в ⭐ Избранное, "
-                        "необходимо перейти в раздел 🔍 Поиск криптовалюты и выбрать нужную криптовалюту."
-                    )
-                    return
-            async with session.get(f"{CRYPTO_SERVICE_URL}/crypto-prices") as response:
-                response.raise_for_status()
-                crypto_data = (await response.json())['data']
-                result = "⭐ *Ваши избранные криптовалюты* ⭐\n\n"
-                result += print_coins(crypto_data, favorites)
-                await message.answer(result, parse_mode='Markdown')
+        async with client_session.get(
+            f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos",
+            json={'requester_id': user_id},
+            headers=DEFAULT_HEADERS,
+        ) as response:
+            response.raise_for_status()
+            favorites = (await response.json())['data'].get('favorites', [])
+            logger.info(f"Favorites for user {user_id}: {favorites}")
+            if not favorites:
+                await message.answer(
+                    "У вас пока нет избранных криптовалют. Чтобы добавить криптовалюту в ⭐ Избранное, "
+                    "необходимо перейти в раздел 🔍 Поиск криптовалюты и выбрать нужную криптовалюту."
+                )
+                return
+        async with client_session.get(f"{CRYPTO_SERVICE_URL}/crypto-prices", headers=DEFAULT_HEADERS) as response:
+            response.raise_for_status()
+            crypto_data = (await response.json())['data']
+            result = "⭐ *Ваши избранные криптовалюты* ⭐\n\n"
+            result += print_coins(crypto_data, favorites)
+            await message.answer(result, parse_mode='Markdown')
     except Exception as e:
         logger.error(f"Error getting favorites: {e}")
         await message.answer("Ошибка при получении избранного. Попробуйте позже.")
 
 
 @dp.message_handler(commands=['admin'])
-@check_user_blocked()
 async def admin_panel(message: types.Message):
     await register_user(message)
     user_id = message.from_user.id
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{ADMIN_SERVICE_URL}/admins/{user_id}/status") as response:
-                response.raise_for_status()
-                if not (await response.json())['data'].get('is_admin', False):
-                    await message.answer("У вас нет доступа к админ-панели.")
-                    return
+        async with client_session.get(
+            f"{ADMIN_SERVICE_URL}/admins/{user_id}/status", headers=DEFAULT_HEADERS
+        ) as response:
+            response.raise_for_status()
+            if not (await response.json())['data'].get('is_admin', False):
+                await message.answer("У вас нет доступа к админ-панели.")
+                return
         keyboard = create_admin_keyboard()
         await message.answer(
             "👨‍💻 *Админ-панель криптобота* 👨‍💻\n\nВыберите действие из меню ниже:",
@@ -384,26 +412,30 @@ async def admin_panel(message: types.Message):
         '🔝 Топ-5 криптовалют',
         '🔍 Поиск криптовалюты',
         '❓ Помощь',
-        '🔙 Назад',
+        '🔙 Завершить поиск',
+        '🔍 Продолжить поиск',
         '⭐ Избранное',
         '👨‍💻 Админ панель',
     ]
 )
-@check_user_blocked()
 async def handle_text_messages(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
     text = message.text
+    if text in ['🔝 Топ-5 криптовалют', '🔍 Поиск криптовалюты']:
+        if await check_user_blocked(user_id):
+            await message.answer("🚫 Ваш аккаунт заблокирован. Обратитесь к администратору.")
+            return
     if text == '💰 Все криптовалюты':
         await send_prices(message)
     elif text == '🔝 Топ-5 криптовалют':
         await register_user(message)
         await log_command(message.from_user.id, '/top5')
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{CRYPTO_SERVICE_URL}/crypto-prices") as response:
-                    response.raise_for_status()
-                    data = (await response.json())['data']
-                    formatted_message = format_crypto_message(data, limit=5)
-                    await message.answer(formatted_message, parse_mode='Markdown')
+            async with client_session.get(f"{CRYPTO_SERVICE_URL}/crypto-prices", headers=DEFAULT_HEADERS) as response:
+                response.raise_for_status()
+                data = (await response.json())['data']
+                formatted_message = format_crypto_message(data, limit=5)
+                await message.answer(formatted_message, parse_mode='Markdown')
         except Exception as e:
             logger.error(f"Error getting top5: {e}")
             await message.answer("Ошибка при получении данных. Попробуйте позже.")
@@ -417,11 +449,19 @@ async def handle_text_messages(message: types.Message, state: FSMContext):
         )
     elif text == '❓ Помощь':
         await send_help(message)
-    elif text == '🔙 Назад':
+    elif text == '🔙 Завершить поиск':
         await register_user(message)
         await state.set_state(None)
         keyboard = create_main_keyboard(message.from_user.id)
-        await message.answer("Выберите действие:", reply_markup=keyboard)
+        await message.answer("Поиск завершен. Выберите действие:", reply_markup=keyboard)
+    elif text == '🔍 Продолжить поиск':
+        await register_user(message)
+        await log_command(message.from_user.id, '/continue_search')
+        await state.set_state(BotStates.SEARCHING_CRYPTO)
+        keyboard = create_popular_coins_keyboard()
+        await message.answer(
+            "Выберите криптовалюту из списка или введите её символ (например, BTC):", reply_markup=keyboard
+        )
     elif text == '⭐ Избранное':
         await send_favorites(message)
     elif text == '👨‍💻 Админ панель':
@@ -429,45 +469,65 @@ async def handle_text_messages(message: types.Message, state: FSMContext):
 
 
 @dp.message_handler(state=BotStates.SEARCHING_CRYPTO)
-@check_user_blocked()
 async def process_search_crypto(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
     text = message.text
+    if text == '🔙 Завершить поиск':
+        await state.set_state(None)
+        keyboard = create_main_keyboard(user_id)
+        await message.answer("Поиск завершен. Выберите действие:", reply_markup=keyboard)
+        return
     if '(' in text and ')' in text:
         symbol = text.split('(')[1].split(')')[0]
     else:
         symbol = text
     await show_coin_info(message, symbol)
-    await state.set_state(None)
+    await state.set_state(None)  # Сбрасываем состояние после обработки
 
 
 async def show_coin_info(message: types.Message, symbol: str):
+    user_id = message.from_user.id
     await register_user(message)
+    symbol = ''.join(c for c in symbol.strip().upper() if c.isalnum())  # Очистка символа
+    logger.info(f"Cleaned symbol for user {user_id}: {symbol}")
+    if not symbol or len(symbol) > 10:
+        await message.answer("Некорректный символ криптовалюты. Используйте только буквы и цифры (например, BTC).")
+        return
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{CRYPTO_SERVICE_URL}/crypto-prices") as response:
-                response.raise_for_status()
-                crypto_data = (await response.json())['data']
-                message_text = get_coin_info_message(crypto_data, symbol)
-                if 'error' not in crypto_data:
-                    async with session.get(
-                        f"{USER_SERVICE_URL}/users/{message.from_user.id}/favorite-cryptos"
-                    ) as fav_response:
-                        fav_response.raise_for_status()
-                        favorites = (await fav_response.json())['data'].get('favorites', [])
-                        is_favorite = symbol.upper() in [fav.upper() for fav in favorites]
-                        keyboard = types.InlineKeyboardMarkup()
-                        keyboard.add(
-                            types.InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{symbol}"),
-                            types.InlineKeyboardButton(
-                                "❌ Удалить из избранного" if is_favorite else "⭐ Добавить в избранное",
-                                callback_data=f"unfav_{symbol}" if is_favorite else f"fav_{symbol}",
-                            ),
-                        )
-                        await message.answer(message_text, parse_mode='Markdown', reply_markup=keyboard)
-                else:
-                    await message.answer(message_text)
+        async with client_session.get(f"{CRYPTO_SERVICE_URL}/crypto-prices", headers=DEFAULT_HEADERS) as response:
+            response.raise_for_status()
+            crypto_data = (await response.json())['data']
+            message_text = get_coin_info_message(crypto_data, symbol)
+            if 'error' not in crypto_data:
+                async with client_session.get(
+                    f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos",
+                    json={'requester_id': user_id},
+                    headers=DEFAULT_HEADERS,
+                ) as fav_response:
+                    fav_response.raise_for_status()
+                    favorites = (await fav_response.json())['data'].get('favorites', [])
+                    logger.info(f"Favorites for user {user_id}: {favorites}")
+                    is_favorite = symbol.upper() in [fav.upper() for fav in favorites]
+                    keyboard = types.InlineKeyboardMarkup()
+                    fav_callback = f"unfav_{symbol}" if is_favorite else f"fav_{symbol}"
+                    refresh_callback = f"refresh_{symbol}"
+                    if len(fav_callback) > 64 or len(refresh_callback) > 64:
+                        logger.error(f"Callback data too long: {fav_callback} or {refresh_callback}")
+                        await message.answer("Ошибка: слишком длинный символ криптовалюты.")
+                        return
+                    keyboard.add(
+                        types.InlineKeyboardButton("🔄 Обновить", callback_data=refresh_callback),
+                        types.InlineKeyboardButton(
+                            "❌ Удалить из избранного" if is_favorite else "⭐ Добавить в избранное",
+                            callback_data=fav_callback,
+                        ),
+                    )
+                    await message.answer(message_text, parse_mode='Markdown', reply_markup=keyboard)
+                    await message.answer("Выберите действие:", reply_markup=create_search_control_keyboard())
+            else:
+                await message.answer(message_text)
     except Exception as e:
-        logger.error(f"Error showing coin info: {e}")
+        logger.error(f"Error showing coin info for {symbol}: {e}")
         await message.answer("Ошибка при получении данных о криптовалюте. Попробуйте позже.")
 
 
@@ -482,16 +542,16 @@ async def show_coin_info(message: types.Message, symbol: str):
         '🔙 Выход из админ-панели',
     ]
 )
-@check_user_blocked()
 async def handle_admin_message(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-    await register_user(message)
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{ADMIN_SERVICE_URL}/admins/{user_id}/status") as response:
-                response.raise_for_status()
-                if not (await response.json())['data'].get('is_admin', False):
-                    return
+        async with client_session.get(
+            f"{ADMIN_SERVICE_URL}/admins/{user_id}/status", headers=DEFAULT_HEADERS
+        ) as response:
+            response.raise_for_status()
+            if not (await response.json())['data'].get('is_admin', False):
+                await message.answer("У вас нет доступа к админ-панели.")
+                return
     except Exception as e:
         logger.error(f"Error checking admin status: {e}")
         await message.answer("Произошла ошибка при проверке статуса админа. Попробуйте позже.")
@@ -534,31 +594,32 @@ async def handle_admin_message(message: types.Message, state: FSMContext):
         )
     elif text == '📊 Статистика бота':
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{ADMIN_SERVICE_URL}/stats") as response:
-                    response.raise_for_status()
-                    stats = (await response.json())['data'].get('stats', '')
-                    await message.answer(stats, parse_mode='Markdown')
+            async with client_session.get(
+                f"{ADMIN_SERVICE_URL}/stats", json={'requester_id': user_id}, headers=DEFAULT_HEADERS
+            ) as response:
+                response.raise_for_status()
+                stats = (await response.json())['data'].get('stats', '')
+                await message.answer(stats, parse_mode='Markdown')
         except Exception as e:
             logger.error(f"Error getting stats: {e}")
             await message.answer("Ошибка при получении статистики. Попробуйте позже.")
     elif text == '🔝 Популярные криптовалюты':
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{ADMIN_SERVICE_URL}/stats/popular-cryptos") as response:
-                    response.raise_for_status()
-                    popular = (await response.json())['data'].get('popular', '')
-                    await message.answer(popular, parse_mode='Markdown')
+            async with client_session.get(
+                f"{ADMIN_SERVICE_URL}/stats/popular-cryptos", json={'requester_id': user_id}, headers=DEFAULT_HEADERS
+            ) as response:
+                response.raise_for_status()
+                popular = (await response.json())['data'].get('popular', '')
+                await message.answer(popular, parse_mode='Markdown')
         except Exception as e:
             logger.error(f"Error getting popular cryptos: {e}")
             await message.answer("Ошибка при получении данных. Попробуйте позже.")
     elif text == '🔙 Выход из админ-панели':
-        keyboard = create_main_keyboard(message.from_user.id)
+        keyboard = create_main_keyboard(user_id)
         await message.answer("Вы вышли из режима администратора.", reply_markup=keyboard)
 
 
 @dp.message_handler(state=BotStates.BROADCAST_MODE)
-@check_user_blocked()
 async def process_broadcast(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     if message.text == 'Отмена':
@@ -575,7 +636,6 @@ async def process_broadcast(message: types.Message, state: FSMContext):
 
 
 @dp.message_handler(state=BotStates.BLOCK_MODE)
-@check_user_blocked()
 async def process_block(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     if message.text == 'Отмена':
@@ -585,10 +645,13 @@ async def process_block(message: types.Message, state: FSMContext):
     else:
         try:
             target_user_id = int(message.text)
-            async with aiohttp.ClientSession() as session:
-                async with session.post(f"{ADMIN_SERVICE_URL}/users/{target_user_id}/block") as response:
-                    response.raise_for_status()
-                    await message.answer(f"✅ Пользователь {target_user_id} заблокирован.")
+            async with client_session.post(
+                f"{ADMIN_SERVICE_URL}/users/{target_user_id}/block",
+                json={'requester_id': user_id},
+                headers=DEFAULT_HEADERS,
+            ) as response:
+                response.raise_for_status()
+                await message.answer(f"✅ Пользователь {target_user_id} заблокирован.")
         except ValueError:
             await message.answer("❌ Неверный формат ID пользователя. Введите числовой ID.")
         except Exception as e:
@@ -600,7 +663,6 @@ async def process_block(message: types.Message, state: FSMContext):
 
 
 @dp.message_handler(state=BotStates.UNBLOCK_MODE)
-@check_user_blocked()
 async def process_unblock(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     if message.text == 'Отмена':
@@ -610,10 +672,13 @@ async def process_unblock(message: types.Message, state: FSMContext):
     else:
         try:
             target_user_id = int(message.text)
-            async with aiohttp.ClientSession() as session:
-                async with session.post(f"{ADMIN_SERVICE_URL}/users/{target_user_id}/unblock") as response:
-                    response.raise_for_status()
-                    await message.answer(f"✅ Пользователь {target_user_id} разблокирован.")
+            async with client_session.post(
+                f"{ADMIN_SERVICE_URL}/users/{target_user_id}/unblock",
+                json={'requester_id': user_id},
+                headers=DEFAULT_HEADERS,
+            ) as response:
+                response.raise_for_status()
+                await message.answer(f"✅ Пользователь {target_user_id} разблокирован.")
         except ValueError:
             await message.answer("❌ Неверный формат ID пользователя. Введите числовой ID.")
         except Exception as e:
@@ -625,130 +690,174 @@ async def process_unblock(message: types.Message, state: FSMContext):
 
 
 @dp.callback_query_handler(lambda c: True)
-async def handle_callback(callback: types.CallbackQuery):
+async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
     data = callback.data
     user_id = callback.from_user.id
+    logger.info(f"Callback received: user_id={user_id}, data={data}")
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{USER_SERVICE_URL}/users/{user_id}/block-status") as response:
-                response.raise_for_status()
-                if (await response.json())['data'].get('is_blocked', True):
-                    await callback.answer("Вы заблокированы администратором")
-                    return
+        async with client_session.get(
+            f"{USER_SERVICE_URL}/users/{user_id}/block-status", json={'requester_id': user_id}, headers=DEFAULT_HEADERS
+        ) as response:
+            response.raise_for_status()
+            if (await response.json())['data'].get('is_blocked', True):
+                logger.info(f"User {user_id} is blocked")
+                await callback.answer("🚫 Вы заблокированы администратором")
+                return
     except Exception as e:
-        logger.error(f"Error checking block status: {e}")
+        logger.error(f"Error checking block status for user {user_id}: {e}")
         await callback.answer("Ошибка при проверке статуса. Попробуйте позже.")
         return
 
     if data.startswith('page_'):
         page = int(data.split('_')[1])
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{CRYPTO_SERVICE_URL}/crypto-prices") as response:
-                    response.raise_for_status()
-                    data = (await response.json())['data']
-                    crypto_keys = [key for key in data.keys() if key != "last_updated"]
-                    try:
-                        sorted_coins = sorted(crypto_keys, key=lambda x: data[x].get("rank", 999))
-                    except Exception as e:
-                        sorted_coins = crypto_keys
-                        logger.error(f"Error sorting coins: {e}")
-                    total_pages = (len(crypto_keys) // 10) + (1 if len(crypto_keys) % 10 > 0 else 0)
-                    start_index = (page - 1) * 10
-                    end_index = min(start_index + 10, len(crypto_keys))
-                    message = (
-                        f"💰 *Криптовалюты (страница {page} из {total_pages})* 💰\n_(обновлено:"
-                        f" {escape_md(data['last_updated'])})_\n\n"
-                    )
-                    message += print_coins(data, sorted_coins[start_index:end_index])
-                    pagination_keyboard = create_pagination_keyboard(page, total_pages)
-                    await callback.message.edit_text(message, parse_mode='Markdown', reply_markup=pagination_keyboard)
+            async with client_session.get(f"{CRYPTO_SERVICE_URL}/crypto-prices", headers=DEFAULT_HEADERS) as response:
+                response.raise_for_status()
+                data = (await response.json())['data']
+                crypto_keys = [key for key in data.keys() if key != "last_updated"]
+                try:
+                    sorted_coins = sorted(crypto_keys, key=lambda x: data[x].get("rank", 999))
+                except Exception as e:
+                    sorted_coins = crypto_keys
+                    logger.error(f"Error sorting coins: {e}")
+                total_pages = (len(crypto_keys) // 10) + (1 if len(crypto_keys) % 10 > 0 else 0)
+                start_index = (page - 1) * 10
+                end_index = min(start_index + 10, len(crypto_keys))
+                message = (
+                    f"💰 *Криптовалюты (страница {page} из {total_pages})* 💰\n_(обновлено:"
+                    f" {escape_md(data['last_updated'])})_\n\n"
+                )
+                message += print_coins(data, sorted_coins[start_index:end_index])
+                pagination_keyboard = create_pagination_keyboard(page, total_pages)
+                await callback.message.edit_text(message, parse_mode='Markdown', reply_markup=pagination_keyboard)
         except Exception as e:
             logger.error(f"Error handling page callback: {e}")
             await callback.answer("Ошибка при загрузке данных. Попробуйте позже.")
     elif data.startswith('refresh_'):
         symbol = data.split('_')[1]
+        logger.info(f"Processing refresh for symbol: {symbol}")
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{CRYPTO_SERVICE_URL}/crypto-prices") as response:
-                    response.raise_for_status()
-                    crypto_data = (await response.json())['data']
-                    message = get_coin_info_message(crypto_data, symbol)
-                    async with session.get(f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos") as fav_response:
-                        fav_response.raise_for_status()
-                        favorites = (await fav_response.json())['data'].get('favorites', [])
-                        is_favorite = symbol.upper() in [fav.upper() for fav in favorites]
-                        keyboard = types.InlineKeyboardMarkup()
-                        keyboard.add(
-                            types.InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{symbol}"),
-                            types.InlineKeyboardButton(
-                                "❌ Удалить из избранного" if is_favorite else "⭐ Добавить в избранное",
-                                callback_data=f"unfav_{symbol}" if is_favorite else f"fav_{symbol}",
-                            ),
-                        )
-                        await callback.message.edit_text(message, parse_mode='Markdown', reply_markup=keyboard)
-        except Exception as e:
-            logger.error(f"Error refreshing coin info: {e}")
-            await callback.answer("Ошибка при обновлении данных. Попробуйте позже.")
-    elif data.startswith(('fav_', 'unfav_')):
-        action, symbol = data.split('_')
-        try:
-            async with aiohttp.ClientSession() as session:
-                if action == 'fav':
-                    async with session.post(
-                        f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos", json={'crypto_symbol': symbol}
-                    ) as response:
-                        response.raise_for_status()
-                        if response.status == 201:
-                            await callback.answer(f"{symbol} добавлен в избранное!")
-                        else:
-                            await callback.answer(f"{symbol} уже в избранном")
-                else:
-                    async with session.delete(
-                        f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos", json={'crypto_symbol': symbol}
-                    ) as response:
-                        response.raise_for_status()
-                        if response.status == 200:
-                            await callback.answer(f"{symbol} удален из избранного")
-                        else:
-                            await callback.answer(f"{symbol} не был в избранном")
-                async with session.get(f"{CRYPTO_SERVICE_URL}/crypto-prices") as crypto_response:
-                    crypto_response.raise_for_status()
-                    crypto_data = (await crypto_response.json())['data']
-                async with session.get(f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos") as fav_response:
+            async with client_session.get(f"{CRYPTO_SERVICE_URL}/crypto-prices", headers=DEFAULT_HEADERS) as response:
+                response.raise_for_status()
+                crypto_data = (await response.json())['data']
+                message = get_coin_info_message(crypto_data, symbol)
+                async with client_session.get(
+                    f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos",
+                    json={'requester_id': user_id},
+                    headers=DEFAULT_HEADERS,
+                ) as fav_response:
                     fav_response.raise_for_status()
                     favorites = (await fav_response.json())['data'].get('favorites', [])
+                    logger.info(f"Favorites for user {user_id} on refresh: {favorites}")
                     is_favorite = symbol.upper() in [fav.upper() for fav in favorites]
                     keyboard = types.InlineKeyboardMarkup()
+                    fav_callback = f"unfav_{symbol}" if is_favorite else f"fav_{symbol}"
+                    logger.info(
+                        f"Creating refresh buttons: refresh_callback=refresh_{symbol}, fav_callback={fav_callback}"
+                    )
                     keyboard.add(
                         types.InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{symbol}"),
                         types.InlineKeyboardButton(
                             "❌ Удалить из избранного" if is_favorite else "⭐ Добавить в избранное",
-                            callback_data=f"unfav_{symbol}" if is_favorite else f"fav_{symbol}",
+                            callback_data=fav_callback,
                         ),
                     )
-                    await callback.message.edit_text(
-                        get_coin_info_message(crypto_data, symbol), parse_mode='Markdown', reply_markup=keyboard
-                    )
+                    await callback.message.edit_text(message, parse_mode='Markdown', reply_markup=keyboard)
+                    await callback.message.answer("Выберите действие:", reply_markup=create_search_control_keyboard())
         except Exception as e:
-            logger.error(f"Error handling favorite action: {e}")
+            logger.error(f"Error refreshing coin info for {symbol}: {e}")
+            await callback.answer("Ошибка при обновлении данных. Попробуйте позже.")
+    elif data.startswith(('fav_', 'unfav_')):
+        logger.info(f"Handling favorite action: data={data}")
+        action, symbol = data.split('_', 1)
+        try:
+            async with (
+                client_session.post(
+                    f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos",
+                    json={'crypto_symbol': symbol, 'requester_id': user_id},
+                    headers=DEFAULT_HEADERS,
+                )
+                if action == 'fav'
+                else client_session.delete(
+                    f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos",
+                    json={'crypto_symbol': symbol, 'requester_id': user_id},
+                    headers=DEFAULT_HEADERS,
+                )
+            ) as response:
+                response.raise_for_status()
+                if action == 'fav':
+                    if response.status == 201:
+                        await callback.answer(f"{symbol} добавлен в избранное!")
+                    else:
+                        await callback.answer(f"{symbol} уже в избранном")
+                else:
+                    if response.status == 200:
+                        await callback.answer(f"{symbol} удален из избранного")
+                    else:
+                        await callback.answer(f"{symbol} не был в избранном")
+            async with client_session.get(
+                f"{CRYPTO_SERVICE_URL}/crypto-prices", headers=DEFAULT_HEADERS
+            ) as crypto_response:
+                crypto_response.raise_for_status()
+                crypto_data = (await crypto_response.json())['data']
+            async with client_session.get(
+                f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos",
+                json={'requester_id': user_id},
+                headers=DEFAULT_HEADERS,
+            ) as fav_response:
+                fav_response.raise_for_status()
+                favorites = (await fav_response.json())['data'].get('favorites', [])
+                logger.info(f"Updated favorites for user {user_id}: {favorites}")
+                is_favorite = symbol.upper() in [fav.upper() for fav in favorites]
+                keyboard = types.InlineKeyboardMarkup()
+                fav_callback = f"unfav_{symbol}" if is_favorite else f"fav_{symbol}"
+                logger.info(f"Creating fav buttons: refresh_callback=refresh_{symbol}, fav_callback={fav_callback}")
+                keyboard.add(
+                    types.InlineKeyboardButton("🔄 Обновить", callback_data=f"refresh_{symbol}"),
+                    types.InlineKeyboardButton(
+                        "❌ Удалить из избранного" if is_favorite else "⭐ Добавить в избранное",
+                        callback_data=fav_callback,
+                    ),
+                )
+                await callback.message.edit_text(
+                    get_coin_info_message(crypto_data, symbol), parse_mode='Markdown', reply_markup=keyboard
+                )
+                await callback.message.answer("Выберите действие:", reply_markup=create_search_control_keyboard())
+        except Exception as e:
+            logger.error(f"Error handling favorite action for {symbol}: {e}")
             await callback.answer("Произошла ошибка. Попробуйте позже.")
+    else:
+        logger.warning(f"Unknown callback data: {data}")
+        await callback.answer("Неизвестное действие.")
     await callback.answer()
 
 
 @dp.message_handler()
-@check_user_blocked()
 async def handle_default(message: types.Message):
+    user_id = message.from_user.id
+    if await check_user_blocked(user_id):
+        await message.answer("🚫 Ваш аккаунт заблокирован. Обратитесь к администратору.")
+        return
     await message.answer("Используйте кнопки меню для навигации")
 
 
 async def main():
-    while True:
-        try:
-            await dp.start_polling()
-        except Exception as e:
-            logger.error(f"Bot polling error: {e}")
-            await asyncio.sleep(5)
+    global client_session
+    client_session = aiohttp.ClientSession(headers=DEFAULT_HEADERS, timeout=aiohttp.ClientTimeout(total=10))
+    logger.info("Starting bot polling...")
+    try:
+        await dp.start_polling(timeout=20, relax=0.1)
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+    except Exception as e:
+        logger.error(f"Bot polling error: {e}")
+        await asyncio.sleep(5)
+    finally:
+        logger.info("Closing client session and bot...")
+        await client_session.close()
+        await dp.storage.close()
+        await dp.storage.wait_closed()
+        await bot.session.close()
 
 
 if __name__ == '__main__':
