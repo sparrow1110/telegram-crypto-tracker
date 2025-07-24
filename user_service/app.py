@@ -1,9 +1,12 @@
-import logging
-from flask import Flask, jsonify, request
-from flasgger import Swagger, swag_from
-from user_service.models import db
-from user_service.db_handler import DatabaseManager
 import os
+import logging
+from fastapi import FastAPI, HTTPException, Request, Response
+from pydantic import BaseModel
+from typing import List, Dict, Optional
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from user_service.models import Base
+from user_service.db_handler import DatabaseManager
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,317 +16,315 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 logger.info("Starting user_service")
 
-db_manager = DatabaseManager()
+# Инициализация FastAPI приложения
+app = FastAPI(
+    title="User Service API",
+    description="API для управления пользовательскими данными",
+    version="1.0.0",
+)
+
+# Настройка базы данных
+DATABASE_URL = (
+    f"postgresql+asyncpg://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@"
+    f"{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/{os.getenv('POSTGRES_DB')}"
+)
+engine = create_async_engine(DATABASE_URL, echo=False)
+AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+# Инициализация DatabaseManager
+db_manager = DatabaseManager(engine, AsyncSessionLocal)
 
 
-def create_app(test_config=None):
-    logger.info("Creating Flask app")
-    app = Flask(__name__)
-    swagger = Swagger(
-        app,
-        template={
-            "swagger": "2.0",
-            "info": {
-                "title": "User Service API",
-                "description": "API для управления пользовательскими данными",
-                "version": "1.0.0",
-            },
-            "consumes": ["application/json"],
-            "produces": ["application/json"],
-        },
-    )
-
-    if test_config:
-        app.config.from_mapping(test_config)
-    else:
-        app.config['SQLALCHEMY_DATABASE_URI'] = (
-            f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@"
-            f"{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/{os.getenv('POSTGRES_DB')}"
-        )
-        app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-    db.init_app(app)
-
-    with app.app_context():
-        logger.info("Creating database tables")
-        db.create_all()
-
-    register_routes(app)
-    return app
+# Pydantic-модели для ответа
+class Error(BaseModel):
+    code: str
+    message: str
 
 
-def format_response(data=None, errors=None, meta=None, status_code=200):
-    response = {'data': data} if data is not None else {}
-    if errors:
-        if not isinstance(errors, list):
-            errors = [errors]
-        response['errors'] = [e if isinstance(e, dict) else {'message': str(e)} for e in errors]
-    if meta:
-        response['meta'] = meta
-    return jsonify(response), status_code
+class UserResponse(BaseModel):
+    data: Optional[Dict] = None
+    errors: Optional[List[Error]] = None
+    meta: Optional[Dict] = None
+    status_code: Optional[int] = None
 
 
+# Создание таблиц при старте
+@app.on_event("startup")
+async def startup_event():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("Database tables created")
+
+
+# Проверка токена
 API_TOKEN = os.getenv('API_TOKEN', 'your-secret-api-token')
 
 
-def verify_token():
+async def verify_token(request: Request) -> bool:
     token = request.headers.get('Authorization', '').replace('Bearer ', '')
-    logger.info(f"Received token: '{token}', Expected: '{API_TOKEN}'")
     return token == API_TOKEN
 
 
-def register_routes(app):
-    @app.route('/v1/stats', methods=['GET'])
-    @swag_from('docs/get_stats.yaml')
-    def get_stats():
-        if not verify_token():
-            return format_response(
-                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
-            )
-        data = request.get_json(silent=True) or {}
-        requester_id = data.get('requester_id')
-        if not requester_id or db_manager.is_blocked(requester_id):
-            return format_response(
-                errors=[{'code': 'Forbidden', 'message': 'User is blocked or invalid requester'}], status_code=403
-            )
-        try:
-            stats = {
-                'user_count': db_manager.get_user_count(),
-                'active_users_24h': db_manager.get_active_users(1),
-                'active_users_7d': db_manager.get_active_users(7),
-                'blocked_count': db_manager.get_blocked_users_count(),
-                'favorites_count': db_manager.get_count_favorite(),
-                'popular_commands': db_manager.get_popular_commands(),
+@app.get("/v1/stats", response_model=UserResponse)
+async def get_stats(request: Request):
+    requester_id = request.query_params.get('requester_id')
+    if not await verify_token(request):
+        raise HTTPException(
+            status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
+        )
+    if not requester_id or await db_manager.is_blocked(int(requester_id)):
+        raise HTTPException(
+            status_code=403,
+            detail={"errors": [{"code": "Forbidden", "message": "User is blocked or invalid requester"}]},
+        )
+    try:
+        stats = await db_manager.get_stats()
+        return {"data": stats, "status_code": 200}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"errors": [{"code": "InternalServerError", "message": str(e)}]})
+
+
+@app.post("/v1/users")
+async def register_user(request: Request, response: Response):
+    if not await verify_token(request):
+        raise HTTPException(
+            status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
+        )
+    data = await request.json()
+    try:
+        success, is_new = await db_manager.register_user(
+            data['user_id'], data.get('username'), data.get('first_name'), data.get('last_name')
+        )
+        if success:
+            response.status_code = 201 if is_new else 200
+            return {
+                "data": {"user_id": data['user_id'], "username": data.get('username'), "is_new": is_new},
+                "status_code": 201 if is_new else 200,
+                "errors": None,
+                "meta": None,
             }
-            return format_response(data=stats)
-        except Exception as e:
-            return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
-
-    @app.route('/v1/users', methods=['POST'])
-    @swag_from('docs/register_user.yaml')
-    def register_user():
-        if not verify_token():
-            return format_response(
-                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
-            )
-        data = request.json
-        try:
-            success, is_new = db_manager.register_user(
-                data['user_id'], data.get('username'), data.get('first_name'), data.get('last_name')
-            )
-            if success:
-                return format_response(
-                    data={'user_id': data['user_id'], 'username': data.get('username'), 'is_new': is_new},
-                    status_code=201 if is_new else 200,
-                )
-            return format_response(
-                errors=[{'code': 'RegistrationFailed', 'message': 'User registration failed'}], status_code=400
-            )
-        except Exception as e:
-            return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
-
-    @app.route('/v1/command-logs', methods=['POST'])
-    @swag_from('docs/log_command.yaml')
-    def log_command():
-        if not verify_token():
-            return format_response(
-                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
-            )
-        data = request.json
-        requester_id = data.get('requester_id')
-        if not requester_id or db_manager.is_blocked(requester_id):
-            return format_response(
-                errors=[{'code': 'Forbidden', 'message': 'User is blocked or invalid requester'}], status_code=403
-            )
-        try:
-            success = db_manager.log_command(data['user_id'], data['command'])
-            if success:
-                return format_response(data={'user_id': data['user_id'], 'command': data['command']})
-            return format_response(
-                errors=[{'code': 'LoggingFailed', 'message': 'Failed to log command'}], status_code=400
-            )
-        except Exception as e:
-            return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
-
-    @app.route('/v1/users/<int:user_id>/favorite-cryptos', methods=['POST'])
-    @swag_from('docs/add_favorite.yaml')
-    def add_favorite(user_id):
-        if not verify_token():
-            return format_response(
-                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
-            )
-        data = request.json
-        requester_id = data.get('requester_id')
-        if not requester_id or db_manager.is_blocked(requester_id):
-            return format_response(
-                errors=[{'code': 'Forbidden', 'message': 'User is blocked or invalid requester'}], status_code=403
-            )
-        try:
-            success = db_manager.add_favorite_crypto(user_id, data['crypto_symbol'])
-            if success:
-                return format_response(
-                    data={'user_id': user_id, 'crypto_symbol': data['crypto_symbol']}, status_code=201
-                )
-            elif success is None:
-                return format_response(errors=[{'code': 'NotFound', 'message': 'User not found'}], status_code=404)
-            return format_response(
-                errors=[{'code': 'AlreadyExists', 'message': 'Crypto already in favorites'}], status_code=400
-            )
-        except Exception as e:
-            return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
-
-    @app.route('/v1/users/<int:user_id>/favorite-cryptos', methods=['DELETE'])
-    @swag_from('docs/remove_favorite.yaml')
-    def remove_favorite(user_id):
-        if not verify_token():
-            return format_response(
-                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
-            )
-        data = request.json
-        requester_id = data.get('requester_id')
-        if not requester_id or db_manager.is_blocked(requester_id):
-            return format_response(
-                errors=[{'code': 'Forbidden', 'message': 'User is blocked or invalid requester'}], status_code=403
-            )
-        try:
-            if not data or 'crypto_symbol' not in data:
-                return format_response(
-                    errors=[{'code': 'ValidationError', 'message': 'Missing required field: crypto_symbol'}],
-                    status_code=400,
-                )
-            success = db_manager.remove_favorite_crypto(user_id, data['crypto_symbol'])
-            if success:
-                return format_response(
-                    data={
-                        'success': True,
-                        'user_id': user_id,
-                        'crypto_symbol': data['crypto_symbol'],
-                        'action': 'removed_from_favorites',
-                    },
-                    status_code=200,
-                )
-            return format_response(
-                errors=[{'code': 'NotFound', 'message': 'Favorite not found or user does not exist'}], status_code=404
-            )
-        except Exception as e:
-            return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
-
-    @app.route('/v1/users/<int:user_id>/favorite-cryptos', methods=['GET'])
-    @swag_from('docs/get_favorites.yaml')
-    def get_favorites(user_id):
-        if not verify_token():
-            return format_response(
-                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
-            )
-        data = request.get_json(silent=True) or {}
-        requester_id = data.get('requester_id')
-        if not requester_id or db_manager.is_blocked(requester_id):
-            return format_response(
-                errors=[{'code': 'Forbidden', 'message': 'User is blocked or invalid requester'}], status_code=403
-            )
-        try:
-            favorites = db_manager.get_favorite_cryptos(user_id)
-            if favorites is None:
-                return format_response(errors=[{'code': 'NotFound', 'message': 'User not found'}], status_code=404)
-            return format_response(data={'favorites': favorites})
-        except Exception as e:
-            return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
-
-    @app.route('/v1/stats/popular-cryptos', methods=['GET'])
-    @swag_from('docs/popular_cryptos.yaml')
-    def popular_cryptos():
-        if not verify_token():
-            return format_response(
-                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
-            )
-        data = request.get_json(silent=True) or {}
-        requester_id = data.get('requester_id')
-        if not requester_id or db_manager.is_blocked(requester_id):
-            return format_response(
-                errors=[{'code': 'Forbidden', 'message': 'User is blocked or invalid requester'}], status_code=403
-            )
-        try:
-            limit = request.args.get('limit', default=5, type=int)
-            cryptos = db_manager.get_popular_cryptos(limit)
-            return format_response(data={'cryptos': cryptos}, meta={'limit': limit})
-        except Exception as e:
-            return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
-
-    @app.route('/v1/users/unblocked', methods=['GET'])
-    @swag_from('docs/unblocked_users.yaml')
-    def unblocked_users():
-        if not verify_token():
-            return format_response(
-                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
-            )
-        try:
-            users = db_manager.get_unblocked_users()
-            return format_response(data={'users': users})
-        except Exception as e:
-            return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
-
-    @app.route('/v1/users/<int:user_id>/block', methods=['POST'])
-    @swag_from('docs/block_user.yaml')
-    def block_user(user_id):
-        if not verify_token():
-            return format_response(
-                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
-            )
-        try:
-            success = db_manager.block_user(user_id)
-            if success:
-                return format_response(
-                    data={'user_id': user_id, 'is_blocked': True, 'action': 'blocked'}, status_code=200
-                )
-            return format_response(
-                errors=[{'code': 'UserNotFound', 'message': f'User {user_id} not found'}], status_code=404
-            )
-        except Exception as e:
-            return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
-
-    @app.route('/v1/users/<int:user_id>/unblock', methods=['POST'])
-    @swag_from('docs/unblock_user.yaml')
-    def unblock_user(user_id):
-        if not verify_token():
-            return format_response(
-                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
-            )
-        try:
-            success = db_manager.unblock_user(user_id)
-            if success:
-                return format_response(
-                    data={'user_id': user_id, 'is_blocked': False, 'action': 'unblocked'}, status_code=200
-                )
-            return format_response(
-                errors=[{'code': 'UserNotFound', 'message': f'User {user_id} not found'}], status_code=404
-            )
-        except Exception as e:
-            return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
-
-    @app.route('/v1/users/<int:user_id>/block-status', methods=['GET'])
-    @swag_from('docs/is_blocked.yaml')
-    def is_blocked(user_id):
-        if not verify_token():
-            return format_response(
-                errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
-            )
-        try:
-            blocked = db_manager.is_blocked(user_id)
-            if blocked is None:
-                return format_response(
-                    errors=[{'code': 'UserNotFound', 'message': f'User {user_id} not found'}], status_code=404
-                )
-            return format_response(data={'user_id': user_id, 'is_blocked': blocked})
-        except Exception as e:
-            return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
-
-    @app.errorhandler(404)
-    def not_found(error):
-        return format_response(errors=[{'code': 'NotFound', 'message': 'Resource not found'}], status_code=404)
+        raise HTTPException(
+            status_code=400, detail={"errors": [{"code": "RegistrationFailed", "message": "User registration failed"}]}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"errors": [{"code": "InternalServerError", "message": str(e)}]})
 
 
-if __name__ == '__main__':
-    app = create_app()
-    with app.app_context():
-        db.create_all()
-    app.run(host='0.0.0.0', port=5001)
+@app.post("/v1/command-logs", response_model=UserResponse)
+async def log_command(request: Request):
+    if not await verify_token(request):
+        raise HTTPException(
+            status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
+        )
+    data = await request.json()
+    requester_id = data.get('requester_id')
+    if not requester_id or await db_manager.is_blocked(requester_id):
+        raise HTTPException(
+            status_code=403,
+            detail={"errors": [{"code": "Forbidden", "message": "User is blocked or invalid requester"}]},
+        )
+    try:
+        success = await db_manager.log_command(data['user_id'], data['command'])
+        if success:
+            return {"data": {"user_id": data['user_id'], "command": data['command']}, "status_code": 200}
+        raise HTTPException(
+            status_code=400, detail={"errors": [{"code": "LoggingFailed", "message": "Failed to log command"}]}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"errors": [{"code": "InternalServerError", "message": str(e)}]})
+
+
+@app.post("/v1/users/{user_id}/favorite-cryptos", response_model=UserResponse, status_code=201)
+async def add_favorite(user_id: int, request: Request):
+    if not await verify_token(request):
+        raise HTTPException(
+            status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
+        )
+    data = await request.json()
+    requester_id = data.get('requester_id')
+    if not requester_id or await db_manager.is_blocked(requester_id):
+        raise HTTPException(
+            status_code=403,
+            detail={"errors": [{"code": "Forbidden", "message": "User is blocked or invalid requester"}]},
+        )
+    try:
+        success = await db_manager.add_favorite_crypto(user_id, data['crypto_symbol'])
+        logger.info(f"add_favorite_crypto for user {user_id}, symbol {data['crypto_symbol']}: success={success}")
+        if success:
+            return {"data": {"user_id": user_id, "crypto_symbol": data['crypto_symbol']}, "status_code": 201}
+        elif success is None:
+            raise HTTPException(status_code=404, detail={"errors": [{"code": "NotFound", "message": "User not found"}]})
+        raise HTTPException(
+            status_code=400, detail={"errors": [{"code": "AlreadyExists", "message": "Crypto already in favorites"}]}
+        )
+    except Exception as e:
+        logger.error(f"Error adding favorite for user {user_id}, symbol {data['crypto_symbol']}: {e}")
+        raise HTTPException(status_code=500, detail={"errors": [{"code": "InternalServerError", "message": str(e)}]})
+
+
+@app.delete("/v1/users/{user_id}/favorite-cryptos", response_model=UserResponse)
+async def remove_favorite(user_id: int, request: Request):
+    if not await verify_token(request):
+        raise HTTPException(
+            status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
+        )
+    data = await request.json()
+    requester_id = data.get('requester_id')
+    if not requester_id or await db_manager.is_blocked(requester_id):
+        raise HTTPException(
+            status_code=403,
+            detail={"errors": [{"code": "Forbidden", "message": "User is blocked or invalid requester"}]},
+        )
+    try:
+        if not data or 'crypto_symbol' not in data:
+            raise HTTPException(
+                status_code=400,
+                detail={"errors": [{"code": "ValidationError", "message": "Missing required field: crypto_symbol"}]},
+            )
+        success = await db_manager.remove_favorite_crypto(user_id, data['crypto_symbol'])
+        if success:
+            return {
+                "data": {
+                    "success": True,
+                    "user_id": user_id,
+                    "crypto_symbol": data['crypto_symbol'],
+                    "action": "removed_from_favorites",
+                },
+                "status_code": 200,
+            }
+        raise HTTPException(
+            status_code=404,
+            detail={"errors": [{"code": "NotFound", "message": "Favorite not found or user does not exist"}]},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"errors": [{"code": "InternalServerError", "message": str(e)}]})
+
+
+@app.get("/v1/users/{user_id}/favorite-cryptos", response_model=UserResponse)
+async def get_favorites(user_id: int, request: Request):
+    if not await verify_token(request):
+        raise HTTPException(
+            status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
+        )
+    requester_id = request.query_params.get('requester_id')
+    if not requester_id or await db_manager.is_blocked(int(requester_id)):
+        raise HTTPException(
+            status_code=403,
+            detail={"errors": [{"code": "Forbidden", "message": "User is blocked or invalid requester"}]},
+        )
+    try:
+        favorites = await db_manager.get_favorite_cryptos(user_id)
+        if favorites is None:
+            raise HTTPException(status_code=404, detail={"errors": [{"code": "NotFound", "message": "User not found"}]})
+        return {"data": {"favorites": favorites}, "status_code": 200}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"errors": [{"code": "InternalServerError", "message": str(e)}]})
+
+
+@app.get("/v1/stats/popular-cryptos", response_model=UserResponse)
+async def popular_cryptos(request: Request):
+    if not await verify_token(request):
+        raise HTTPException(
+            status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
+        )
+    requester_id = request.query_params.get('requester_id')
+    if not requester_id or await db_manager.is_blocked(int(requester_id)):
+        raise HTTPException(
+            status_code=403,
+            detail={"errors": [{"code": "Forbidden", "message": "User is blocked or invalid requester"}]},
+        )
+    try:
+        limit = int(request.query_params.get('limit', 5))
+        cryptos = await db_manager.get_popular_cryptos(limit)
+        return {"data": {"cryptos": cryptos}, "meta": {"limit": limit}, "status_code": 200}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"errors": [{"code": "InternalServerError", "message": str(e)}]})
+
+
+@app.get("/v1/users/unblocked", response_model=UserResponse)
+async def unblocked_users(request: Request):
+    if not await verify_token(request):
+        raise HTTPException(
+            status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
+        )
+    try:
+        users = await db_manager.get_unblocked_users()
+        return {"data": {"users": users}, "status_code": 200}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"errors": [{"code": "InternalServerError", "message": str(e)}]})
+
+
+@app.post("/v1/users/{user_id}/block", response_model=UserResponse)
+async def block_user(user_id: int, request: Request):
+    if not await verify_token(request):
+        raise HTTPException(
+            status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
+        )
+    data = await request.json()
+    requester_id = data.get('requester_id')
+    if not requester_id or await db_manager.is_blocked(requester_id):
+        raise HTTPException(
+            status_code=403,
+            detail={"errors": [{"code": "Forbidden", "message": "User is blocked or invalid requester"}]},
+        )
+    try:
+        success = await db_manager.block_user(user_id)
+        if success:
+            return {"data": {"user_id": user_id, "is_blocked": True, "action": "blocked"}, "status_code": 200}
+        raise HTTPException(
+            status_code=404, detail={"errors": [{"code": "UserNotFound", "message": f"User {user_id} not found"}]}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"errors": [{"code": "InternalServerError", "message": str(e)}]})
+
+
+@app.post("/v1/users/{user_id}/unblock", response_model=UserResponse)
+async def unblock_user(user_id: int, request: Request):
+    if not await verify_token(request):
+        raise HTTPException(
+            status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
+        )
+    data = await request.json()
+    requester_id = data.get('requester_id')
+    if not requester_id or await db_manager.is_blocked(requester_id):
+        raise HTTPException(
+            status_code=403,
+            detail={"errors": [{"code": "Forbidden", "message": "User is blocked or invalid requester"}]},
+        )
+    try:
+        success = await db_manager.unblock_user(user_id)
+        if success:
+            return {"data": {"user_id": user_id, "is_blocked": False, "action": "unblocked"}, "status_code": 200}
+        raise HTTPException(
+            status_code=404, detail={"errors": [{"code": "UserNotFound", "message": f"User {user_id} not found"}]}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"errors": [{"code": "InternalServerError", "message": str(e)}]})
+
+
+@app.get("/v1/users/{user_id}/block-status", response_model=UserResponse)
+async def is_blocked(user_id: int, request: Request):
+    if not await verify_token(request):
+        raise HTTPException(
+            status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
+        )
+    requester_id = request.query_params.get('requester_id')
+    if not requester_id:
+        raise HTTPException(
+            status_code=403, detail={"errors": [{"code": "Forbidden", "message": "Invalid or missing requester_id"}]}
+        )
+    try:
+        blocked = await db_manager.is_blocked(int(requester_id))
+        if blocked is None:
+            raise HTTPException(
+                status_code=404, detail={"errors": [{"code": "UserNotFound", "message": f"User {user_id} not found"}]}
+            )
+        return {"data": {"user_id": user_id, "is_blocked": blocked}, "status_code": 200}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"errors": [{"code": "InternalServerError", "message": str(e)}]})
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("user_service.app:app", host="0.0.0.0", port=5001, reload=True)

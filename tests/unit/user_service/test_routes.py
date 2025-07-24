@@ -1,119 +1,132 @@
-import json
+import pytest
 import os
+from fastapi.testclient import TestClient
+from unittest.mock import AsyncMock, patch
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from user_service.app import app, db_manager
+from user_service.models import Base
 from dotenv import load_dotenv
 
 load_dotenv()
 
-print(f"API_TOKEN from env: {os.getenv('API_TOKEN')}")
+
+@pytest.fixture
+async def test_db():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    db_manager.engine = engine
+    db_manager.SessionLocal = AsyncSessionLocal
+    yield
+    await engine.dispose()
 
 
-def test_register_user(client):
-    token = os.getenv("API_TOKEN", "your-secret-api-token")
-    headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
-    print(f"Headers sent in test: {headers}")
-    response = client.post(
-        '/v1/users',
-        headers={
-            'Authorization': f'Bearer {os.getenv("API_TOKEN", "your-secret-api-token")}',
-            'Content-Type': 'application/json',
-        },
-        json={'user_id': 123, 'username': 'testuser', 'first_name': 'Test', 'last_name': 'User', 'requester_id': 123},
-    )
-
-    data = json.loads(response.data)
-    assert response.status_code == 201
-    assert data['data']['user_id'] == 123
-    assert data['data']['is_new'] is True
+@pytest.fixture
+def client(test_db):
+    return TestClient(app)
 
 
-def test_log_command(client):
-    # First register a user
-    client.post(
-        '/v1/users',
-        headers={
-            'Authorization': f'Bearer {os.getenv("API_TOKEN", "your-secret-api-token")}',
-            'Content-Type': 'application/json',
-        },
-        json={'user_id': 123, 'requester_id': 123},
-    )
-
-    response = client.post(
-        '/v1/command-logs',
-        headers={
-            'Authorization': f'Bearer {os.getenv("API_TOKEN", "your-secret-api-token")}',
-            'Content-Type': 'application/json',
-        },
-        json={'user_id': 123, 'command': '/start', 'requester_id': 123},
-    )
-
-    data = json.loads(response.data)
-    assert response.status_code == 200
-    assert data['data']['user_id'] == 123
-    assert data['data']['command'] == '/start'
+@pytest.mark.asyncio
+async def test_register_user_new(client):
+    with patch('user_service.app.db_manager.register_user', new=AsyncMock(return_value=(True, True))):
+        token = os.getenv("API_TOKEN", "your-secret-api-token")
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+        response = client.post("/v1/users", json={"user_id": 123, "username": "testuser"}, headers=headers)
+        assert response.status_code == 201
+        assert response.json() == {
+            "data": {"user_id": 123, "username": "testuser", "is_new": True},
+            "status_code": 201,
+            "errors": None,
+            "meta": None,
+        }
 
 
-def test_add_favorite_crypto(client):
-    client.post(
-        '/v1/users',
-        headers={
-            'Authorization': f'Bearer {os.getenv("API_TOKEN", "your-secret-api-token")}',
-            'Content-Type': 'application/json',
-        },
-        json={'user_id': 123, 'requester_id': 123},
-    )
-
-    response = client.post(
-        '/v1/users/123/favorite-cryptos',
-        headers={
-            'Authorization': f'Bearer {os.getenv("API_TOKEN", "your-secret-api-token")}',
-            'Content-Type': 'application/json',
-        },
-        json={'crypto_symbol': 'BTC', 'requester_id': 123},
-    )
-
-    data = json.loads(response.data)
-    assert response.status_code == 201
-    assert data['data']['user_id'] == 123
-    assert data['data']['crypto_symbol'] == 'BTC'
+@pytest.mark.asyncio
+async def test_register_user_existing(client):
+    with patch('user_service.app.db_manager.register_user', new=AsyncMock(return_value=(True, False))):
+        token = os.getenv("API_TOKEN", "your-secret-api-token")
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+        response = client.post("/v1/users", json={"user_id": 123, "username": "testuser"}, headers=headers)
+        assert response.status_code == 200
+        assert response.json() == {
+            "data": {"user_id": 123, "username": "testuser", "is_new": False},
+            "status_code": 200,
+            "errors": None,
+            "meta": None,
+        }
 
 
-def test_get_stats(client):
-    # Create some test data
-    client.post(
-        '/v1/users',
-        headers={
-            'Authorization': f'Bearer {os.getenv("API_TOKEN", "your-secret-api-token")}',
-            'Content-Type': 'application/json',
-        },
-        json={'user_id': 123, 'requester_id': 123},
-    )
-    client.post(
-        '/v1/command-logs',
-        headers={
-            'Authorization': f'Bearer {os.getenv("API_TOKEN", "your-secret-api-token")}',
-            'Content-Type': 'application/json',
-        },
-        json={'user_id': 123, 'command': '/start', 'requester_id': 123},
-    )
-    client.post(
-        '/v1/users/123/favorite-cryptos',
-        headers={
-            'Authorization': f'Bearer {os.getenv("API_TOKEN", "your-secret-api-token")}',
-            'Content-Type': 'application/json',
-        },
-        json={'crypto_symbol': 'BTC', 'requester_id': 123},
-    )
+@pytest.mark.asyncio
+async def test_log_command(client):
+    with patch('user_service.db_handler.DatabaseManager.is_blocked', new=AsyncMock(return_value=False)):
+        with patch('user_service.db_handler.DatabaseManager.log_command', new=AsyncMock(return_value=True)):
+            token = os.getenv("API_TOKEN", "your-secret-api-token")
+            headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+            response = client.post(
+                '/v1/command-logs',
+                headers=headers,
+                json={'user_id': 123, 'command': '/start', 'requester_id': 123},
+            )
+            assert response.status_code == 200
+            assert response.json() == {
+                'data': {'user_id': 123, 'command': '/start'},
+                'errors': None,
+                'meta': None,
+                'status_code': 200,
+            }
 
-    response = client.get(
-        '/v1/stats',
-        headers={
-            'Authorization': f'Bearer {os.getenv("API_TOKEN", "your-secret-api-token")}',
-            'Content-Type': 'application/json',
-        },
-        json={'requester_id': 123},
-    )
-    data = json.loads(response.data)
 
-    assert response.status_code == 200
-    assert data['data']['user_count'] == 1
-    assert data['data']['favorites_count'] == 1
+@pytest.mark.asyncio
+async def test_add_favorite_crypto(client):
+    with patch('user_service.db_handler.DatabaseManager.is_blocked', new=AsyncMock(return_value=False)):
+        with patch('user_service.db_handler.DatabaseManager.add_favorite_crypto', new=AsyncMock(return_value=True)):
+            token = os.getenv("API_TOKEN", "your-secret-api-token")
+            headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+            response = client.post(
+                '/v1/users/123/favorite-cryptos',
+                headers=headers,
+                json={'crypto_symbol': 'BTC', 'requester_id': 123},
+            )
+            assert response.status_code == 201
+            assert response.json() == {
+                'data': {'user_id': 123, 'crypto_symbol': 'BTC'},
+                'errors': None,
+                'meta': None,
+                'status_code': 201,
+            }
+
+
+@pytest.mark.asyncio
+async def test_get_stats(client):
+    with patch('user_service.db_handler.DatabaseManager.is_blocked', new=AsyncMock(return_value=False)):
+        with patch('user_service.db_handler.DatabaseManager.get_stats', new=AsyncMock()) as mock_stats:
+            mock_stats.return_value = {
+                'user_count': 1,
+                'active_users_24h': 0,
+                'active_users_7d': 0,
+                'blocked_count': 0,
+                'favorites_count': 0,
+                'popular_commands': [],
+            }
+            token = os.getenv("API_TOKEN", "your-secret-api-token")
+            headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+            response = client.get(
+                '/v1/stats?requester_id=123',
+                headers=headers,
+            )
+            assert response.status_code == 200
+            assert response.json() == {
+                'data': {
+                    'user_count': 1,
+                    'active_users_24h': 0,
+                    'active_users_7d': 0,
+                    'blocked_count': 0,
+                    'favorites_count': 0,
+                    'popular_commands': [],
+                },
+                'errors': None,
+                'meta': None,
+                'status_code': 200,
+            }

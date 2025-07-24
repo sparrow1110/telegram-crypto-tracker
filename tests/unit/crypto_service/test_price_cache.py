@@ -1,21 +1,39 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from crypto_service.price_cache import get_cached_prices, get_cached_coin_info
 
 
-@pytest.fixture
-def mock_parser():
-    with patch('crypto_service.price_cache.parser') as mock_parser:
-        yield mock_parser
+@pytest.mark.asyncio
+async def test_get_cached_prices():
+    test_data = {
+        'last_updated': '2025-07-24 01:23:06',
+        'BTC': {
+            'name': 'Bitcoin',
+            'price_usd': 50000.00,
+            'percent_change_1h': 0.5,
+            'percent_change_24h': 2.5,
+            'percent_change_7d': 10.0,
+            'market_cap_usd': 1000000000000,
+            'rank': 1,
+        },
+    }
+    with patch('crypto_service.crypto_parser.CryptoParser.get_crypto_prices', new=AsyncMock(return_value=test_data)):
+        result = await get_cached_prices()
+        assert result == test_data
 
 
-def test_get_cached_prices(mock_parser):
-    mock_parser.get_crypto_prices.return_value = {'BTC': {'price': 50000}}
-    result = get_cached_prices()
-    assert result == {'BTC': {'price': 50000}}
-
-
-def test_get_cached_coin_info(mock_parser):
-    mock_parser.get_coin_info.return_value = {'BTC': {'price': 50000}}
-    result = get_cached_coin_info('BTC')
-    assert result == {'BTC': {'price': 50000}}
+@pytest.mark.asyncio
+async def test_get_cached_coin_info():
+    test_data = {
+        'name': 'Bitcoin',
+        'price_usd': 50000.00,
+        'percent_change_1h': 0.5,
+        'percent_change_24h': 2.5,
+        'percent_change_7d': 10.0,
+        'market_cap_usd': 1000000000000,
+        'rank': 1,
+        'last_updated': '2025-07-24 01:23:06',
+    }
+    with patch('crypto_service.crypto_parser.CryptoParser.get_coin_info', new=AsyncMock(return_value=test_data)):
+        result = await get_cached_coin_info('BTC')
+        assert result == test_data

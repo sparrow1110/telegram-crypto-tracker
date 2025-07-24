@@ -41,16 +41,15 @@ class BotStates(StatesGroup):
 
 
 async def check_user_blocked(user_id):
-    """Check if user is blocked via user_service API"""
     try:
         async with client_session.get(
-            f"{USER_SERVICE_URL}/users/{user_id}/block-status", json={'requester_id': user_id}
+            f"{USER_SERVICE_URL}/users/{user_id}/block-status", params={'requester_id': user_id}
         ) as response:
             response.raise_for_status()
             return (await response.json())['data'].get('is_blocked', False)
     except Exception as e:
         logger.error(f"Error checking block status for user {user_id}: {e}")
-        return False  # Если ошибка, считаем пользователя незаблокированным
+        return False
 
 
 async def register_user(message: types.Message):
@@ -359,7 +358,7 @@ async def send_favorites(message: types.Message):
     try:
         async with client_session.get(
             f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos",
-            json={'requester_id': user_id},
+            params={'requester_id': user_id},
             headers=DEFAULT_HEADERS,
         ) as response:
             response.raise_for_status()
@@ -501,7 +500,7 @@ async def show_coin_info(message: types.Message, symbol: str):
             if 'error' not in crypto_data:
                 async with client_session.get(
                     f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos",
-                    json={'requester_id': user_id},
+                    params={'requester_id': user_id},
                     headers=DEFAULT_HEADERS,
                 ) as fav_response:
                     fav_response.raise_for_status()
@@ -515,13 +514,14 @@ async def show_coin_info(message: types.Message, symbol: str):
                         logger.error(f"Callback data too long: {fav_callback} or {refresh_callback}")
                         await message.answer("Ошибка: слишком длинный символ криптовалюты.")
                         return
-                    keyboard.add(
-                        types.InlineKeyboardButton("🔄 Обновить", callback_data=refresh_callback),
-                        types.InlineKeyboardButton(
-                            "❌ Удалить из избранного" if is_favorite else "⭐ Добавить в избранное",
-                            callback_data=fav_callback,
-                        ),
-                    )
+                    if "не найдена" not in message_text:
+                        keyboard.add(
+                            types.InlineKeyboardButton("🔄 Обновить", callback_data=refresh_callback),
+                            types.InlineKeyboardButton(
+                                "❌ Удалить из избранного" if is_favorite else "⭐ Добавить в избранное",
+                                callback_data=fav_callback,
+                            ),
+                        )
                     await message.answer(message_text, parse_mode='Markdown', reply_markup=keyboard)
                     await message.answer("Выберите действие:", reply_markup=create_search_control_keyboard())
             else:
@@ -595,7 +595,7 @@ async def handle_admin_message(message: types.Message, state: FSMContext):
     elif text == '📊 Статистика бота':
         try:
             async with client_session.get(
-                f"{ADMIN_SERVICE_URL}/stats", json={'requester_id': user_id}, headers=DEFAULT_HEADERS
+                f"{ADMIN_SERVICE_URL}/stats", params={'requester_id': user_id}, headers=DEFAULT_HEADERS
             ) as response:
                 response.raise_for_status()
                 stats = (await response.json())['data'].get('stats', '')
@@ -606,7 +606,7 @@ async def handle_admin_message(message: types.Message, state: FSMContext):
     elif text == '🔝 Популярные криптовалюты':
         try:
             async with client_session.get(
-                f"{ADMIN_SERVICE_URL}/stats/popular-cryptos", json={'requester_id': user_id}, headers=DEFAULT_HEADERS
+                f"{ADMIN_SERVICE_URL}/stats/popular-cryptos", params={'requester_id': user_id}, headers=DEFAULT_HEADERS
             ) as response:
                 response.raise_for_status()
                 popular = (await response.json())['data'].get('popular', '')
@@ -696,7 +696,9 @@ async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
     logger.info(f"Callback received: user_id={user_id}, data={data}")
     try:
         async with client_session.get(
-            f"{USER_SERVICE_URL}/users/{user_id}/block-status", json={'requester_id': user_id}, headers=DEFAULT_HEADERS
+            f"{USER_SERVICE_URL}/users/{user_id}/block-status",
+            params={'requester_id': user_id},
+            headers=DEFAULT_HEADERS,
         ) as response:
             response.raise_for_status()
             if (await response.json())['data'].get('is_blocked', True):
@@ -743,7 +745,7 @@ async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
                 message = get_coin_info_message(crypto_data, symbol)
                 async with client_session.get(
                     f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos",
-                    json={'requester_id': user_id},
+                    params={'requester_id': user_id},
                     headers=DEFAULT_HEADERS,
                 ) as fav_response:
                     fav_response.raise_for_status()
@@ -802,7 +804,7 @@ async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
                 crypto_data = (await crypto_response.json())['data']
             async with client_session.get(
                 f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos",
-                json={'requester_id': user_id},
+                params={'requester_id': user_id},
                 headers=DEFAULT_HEADERS,
             ) as fav_response:
                 fav_response.raise_for_status()
@@ -830,15 +832,6 @@ async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
         logger.warning(f"Unknown callback data: {data}")
         await callback.answer("Неизвестное действие.")
     await callback.answer()
-
-
-@dp.message_handler()
-async def handle_default(message: types.Message):
-    user_id = message.from_user.id
-    if await check_user_blocked(user_id):
-        await message.answer("🚫 Ваш аккаунт заблокирован. Обратитесь к администратору.")
-        return
-    await message.answer("Используйте кнопки меню для навигации")
 
 
 async def main():

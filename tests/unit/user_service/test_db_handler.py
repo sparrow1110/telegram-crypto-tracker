@@ -1,99 +1,107 @@
+import pytest
 from user_service.db_handler import DatabaseManager
 from user_service.models import User, UserFavorite, UsageStat
 
 
-def test_register_user_new(app):
-    with app.app_context():
-        db_manager = DatabaseManager()
-        success, is_new = db_manager.register_user(123, 'testuser', 'Test', 'User')
+@pytest.mark.asyncio
+async def test_register_user_new(async_session):
+    db_manager = DatabaseManager(None, async_session)
+    success, is_new = await db_manager.register_user(123, 'testuser', 'Test', 'User')
 
-        assert success is True
-        assert is_new is True
+    assert success is True
+    assert is_new is True
 
-        user = User.query.get(123)
+    async with async_session() as session:
+        user = await session.get(User, 123)
         assert user is not None
         assert user.username == 'testuser'
 
 
-def test_register_user_existing(app):
-    with app.app_context():
-        # First registration
-        db_manager = DatabaseManager()
-        db_manager.register_user(123, 'testuser', 'Test', 'User')
+@pytest.mark.asyncio
+async def test_register_user_existing(async_session):
+    db_manager = DatabaseManager(None, async_session)
+    await db_manager.register_user(123, 'testuser', 'Test', 'User')
 
-        # Update user
-        success, is_new = db_manager.register_user(123, 'updateduser', 'Updated', 'User')
+    success, is_new = await db_manager.register_user(123, 'updateduser', 'Updated', 'User')
 
-        assert success is True
-        assert is_new is False
+    assert success is True
+    assert is_new is False
 
-        user = User.query.get(123)
+    async with async_session() as session:
+        user = await session.get(User, 123)
         assert user.username == 'updateduser'
 
 
-def test_log_command(app):
-    with app.app_context():
-        db_manager = DatabaseManager()
-        db_manager.register_user(123, 'testuser', 'Test', 'User')
+@pytest.mark.asyncio
+async def test_log_command(async_session):
+    db_manager = DatabaseManager(None, async_session)
+    await db_manager.register_user(123, 'testuser', 'Test', 'User')
 
-        success = db_manager.log_command(123, '/start')
-        assert success is True
+    success = await db_manager.log_command(123, '/start')
+    assert success is True
 
-        stats = UsageStat.query.filter_by(user_id=123).all()
+    async with async_session() as session:
+        from sqlalchemy import select
+
+        stats = (await session.execute(select(UsageStat).filter_by(user_id=123))).scalars().all()
         assert len(stats) == 1
         assert stats[0].command == '/start'
 
 
-def test_add_favorite_crypto(app):
-    with app.app_context():
-        db_manager = DatabaseManager()
-        db_manager.register_user(123, 'testuser', 'Test', 'User')
+@pytest.mark.asyncio
+async def test_add_favorite_crypto(async_session):
+    db_manager = DatabaseManager(None, async_session)
+    await db_manager.register_user(123, 'testuser', 'Test', 'User')
 
-        success = db_manager.add_favorite_crypto(123, 'BTC')
-        assert success is True
+    success = await db_manager.add_favorite_crypto(123, 'BTC')
+    assert success is True
 
-        favorites = UserFavorite.query.filter_by(user_id=123).all()
+    async with async_session() as session:
+        from sqlalchemy import select
+
+        favorites = (await session.execute(select(UserFavorite).filter_by(user_id=123))).scalars().all()
         assert len(favorites) == 1
         assert favorites[0].crypto_symbol == 'BTC'
 
 
-def test_remove_favorite_crypto(app):
-    with app.app_context():
-        db_manager = DatabaseManager()
-        db_manager.register_user(123, 'testuser', 'Test', 'User')
-        db_manager.add_favorite_crypto(123, 'BTC')
+@pytest.mark.asyncio
+async def test_remove_favorite_crypto(async_session):
+    db_manager = DatabaseManager(None, async_session)
+    await db_manager.register_user(123, 'testuser', 'Test', 'User')
+    await db_manager.add_favorite_crypto(123, 'BTC')
 
-        success = db_manager.remove_favorite_crypto(123, 'BTC')
-        assert success is True
+    success = await db_manager.remove_favorite_crypto(123, 'BTC')
+    assert success is True
 
-        favorites = UserFavorite.query.filter_by(user_id=123).all()
+    async with async_session() as session:
+        from sqlalchemy import select
+
+        favorites = (await session.execute(select(UserFavorite).filter_by(user_id=123))).scalars().all()
         assert len(favorites) == 0
 
 
-def test_get_favorite_cryptos(app):
-    with app.app_context():
-        db_manager = DatabaseManager()
-        db_manager.register_user(123, 'testuser', 'Test', 'User')
-        db_manager.add_favorite_crypto(123, 'BTC')
-        db_manager.add_favorite_crypto(123, 'ETH')
+@pytest.mark.asyncio
+async def test_get_favorite_cryptos(async_session):
+    db_manager = DatabaseManager(None, async_session)
+    await db_manager.register_user(123, 'testuser', 'Test', 'User')
+    await db_manager.add_favorite_crypto(123, 'BTC')
+    await db_manager.add_favorite_crypto(123, 'ETH')
 
-        favorites = db_manager.get_favorite_cryptos(123)
-        assert len(favorites) == 2
-        assert 'BTC' in favorites
-        assert 'ETH' in favorites
+    favorites = await db_manager.get_favorite_cryptos(123)
+    assert len(favorites) == 2
+    assert 'BTC' in favorites
+    assert 'ETH' in favorites
 
 
-def test_block_unblock_user(app):
-    with app.app_context():
-        db_manager = DatabaseManager()
-        db_manager.register_user(123, 'testuser', 'Test', 'User')
+@pytest.mark.asyncio
+async def test_block_unblock_user(async_session):
+    db_manager = DatabaseManager(None, async_session)
+    await db_manager.register_user(123, 'testuser', 'Test', 'User')
 
-        # Block user
-        success = db_manager.block_user(123)
-        assert success is True
-        assert db_manager.is_blocked(123) is True
+    success = await db_manager.block_user(123)
+    assert success is True
+    assert await db_manager.is_blocked(123) is True
 
-        # Unblock user
-        success = db_manager.unblock_user(123)
-        assert success is True
-        assert db_manager.is_blocked(123) is False
+    success = await db_manager.unblock_user(123)
+    assert success is True
+    assert await db_manager.is_blocked(123) is False

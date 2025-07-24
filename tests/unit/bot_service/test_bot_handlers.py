@@ -38,7 +38,6 @@ async def test_send_welcome(mock_message):
 
 @pytest.mark.asyncio
 async def test_send_help(mock_message):
-    """Test /help command handler"""
     with (
         patch('bot_service.app.register_user', new_callable=AsyncMock) as mock_register,
         patch('bot_service.app.log_command', new_callable=AsyncMock) as mock_log,

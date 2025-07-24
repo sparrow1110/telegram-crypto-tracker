@@ -1,25 +1,38 @@
-from flask import Flask, jsonify, request
-from flasgger import Swagger, swag_from
-from .admin_panel import AdminPanel
 import os
+from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel
+from typing import List, Dict, Optional
+from admin_service.admin_panel import AdminPanel
 from dotenv import load_dotenv
+import logging
 
 load_dotenv()
 
-app = Flask(__name__)
-swagger = Swagger(
-    app,
-    template={
-        "swagger": "2.0",
-        "info": {
-            "title": "Admin Service API",
-            "description": "API для администрирования криптобота",
-            "version": "1.0.0",
-        },
-        "consumes": ["application/json"],
-        "produces": ["application/json"],
-    },
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+
+# Pydantic-модели для ответа
+class Error(BaseModel):
+    code: str
+    message: str
+
+
+class AdminResponse(BaseModel):
+    data: Optional[Dict] = None
+    errors: Optional[List[Error]] = None
+    meta: Optional[Dict] = None
+
+
+# Инициализация FastAPI приложения
+app = FastAPI(
+    title="Admin Service API",
+    description="API для администрирования криптобота",
+    version="1.0.0",
 )
+
+# Инициализация AdminPanel
 API_TOKEN = os.getenv('API_TOKEN', 'your-secret-api-token')
 admin = AdminPanel(
     user_service_url=os.getenv('USER_SERVICE_URL', 'http://user_service:5001'),
@@ -28,105 +41,97 @@ admin = AdminPanel(
 )
 
 
-def format_response(data=None, errors=None, meta=None, status_code=200):
-    response = {'data': data} if data is not None else {}
-
-    if errors:
-        if not isinstance(errors, list):
-            errors = [errors]
-        response['errors'] = [e if isinstance(e, dict) else {'message': str(e)} for e in errors]
-
-    if meta:
-        response['meta'] = meta
-    return jsonify(response), status_code
-
-
-def verify_token():
+# Проверка токена
+async def verify_token(request: Request) -> bool:
     token = request.headers.get('Authorization', '').replace('Bearer ', '')
     return token == API_TOKEN
 
 
-def check_admin(requester_id):
+# Проверка статуса админа
+async def check_admin(requester_id: int) -> bool:
     try:
-        return admin.is_admin(requester_id)
+        return await admin.is_admin(requester_id)
     except Exception as e:
+        logger.error(f"Error checking admin status: {e}")
         return False
 
 
-@app.route('/v1/admins/<int:user_id>/status', methods=['GET'])
-@swag_from('docs/is_admin.yaml')
-def is_admin(user_id):
-    if not verify_token():
-        return format_response(
-            errors=[{'code': 'Unauthorized', 'message': 'Invalid or missing API token'}], status_code=401
+@app.get("/v1/admins/{user_id}/status", response_model=AdminResponse)
+async def is_admin(user_id: int, request: Request):
+    if not await verify_token(request):
+        raise HTTPException(
+            status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
         )
     try:
-        is_admin = admin.is_admin(user_id)
-        return format_response(data={'is_admin': is_admin})
+        is_admin_status = await admin.is_admin(user_id)
+        return {"data": {"is_admin": is_admin_status}}
     except Exception as e:
-        return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
+        raise HTTPException(status_code=500, detail={"errors": [{"code": "InternalServerError", "message": str(e)}]})
 
 
-@app.route('/v1/stats', methods=['GET'])
-@swag_from('docs/get_stats.yaml')
-def get_stats():
-    requester_id = request.json.get('requester_id')
-    if not requester_id or not check_admin(requester_id):
-        return format_response(errors=[{'code': 'Forbidden', 'message': 'User is not an admin'}], status_code=403)
+@app.get("/v1/stats", response_model=AdminResponse)
+async def get_stats(request: Request):
+    requester_id = request.query_params.get('requester_id')
+    if not requester_id or not await check_admin(int(requester_id)):
+        raise HTTPException(
+            status_code=403, detail={"errors": [{"code": "Forbidden", "message": "User is not an admin"}]}
+        )
     try:
-        stats = admin.get_bot_stats(requester_id)
-        return format_response(data={'stats': stats})
+        stats = await admin.get_bot_stats(int(requester_id))
+        return {"data": {"stats": stats}}
     except Exception as e:
-        return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
+        raise HTTPException(status_code=500, detail={"errors": [{"code": "InternalServerError", "message": str(e)}]})
 
 
-@app.route('/v1/stats/popular-cryptos', methods=['GET'])
-@swag_from('docs/popular_cryptos.yaml')
-def popular_cryptos():
-    requester_id = request.json.get('requester_id')
-    if not requester_id or not check_admin(requester_id):
-        return format_response(errors=[{'code': 'Forbidden', 'message': 'User is not an admin'}], status_code=403)
+@app.get("/v1/stats/popular-cryptos", response_model=AdminResponse)
+async def popular_cryptos(request: Request):
+    requester_id = request.query_params.get('requester_id')
+    if not requester_id or not await check_admin(int(requester_id)):
+        raise HTTPException(
+            status_code=403, detail={"errors": [{"code": "Forbidden", "message": "User is not an admin"}]}
+        )
     try:
-        popular = admin.get_popular_cryptos(requester_id)
-        return format_response(data={'popular': popular})
+        popular = await admin.get_popular_cryptos(int(requester_id))
+        return {"data": {"popular": popular}}
     except Exception as e:
-        return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
+        raise HTTPException(status_code=500, detail={"errors": [{"code": "InternalServerError", "message": str(e)}]})
 
 
-@app.route('/v1/users/<int:user_id>/block', methods=['POST'])
-@swag_from('docs/block_user.yaml')
-def block_user(user_id):
-    requester_id = request.json.get('requester_id')
-    if not requester_id or not check_admin(requester_id):
-        return format_response(errors=[{'code': 'Forbidden', 'message': 'User is not an admin'}], status_code=403)
+@app.post("/v1/users/{user_id}/block", response_model=AdminResponse)
+async def block_user(user_id: int, request: Request):
+    data = await request.json() or {}
+    requester_id = data.get('requester_id')
+    if not requester_id or not await check_admin(requester_id):
+        raise HTTPException(
+            status_code=403, detail={"errors": [{"code": "Forbidden", "message": "User is not an admin"}]}
+        )
     try:
-        success = admin.block_user(user_id, requester_id)
+        success = await admin.block_user(user_id, requester_id)
         if success:
-            return format_response(data={'user_id': user_id, 'is_blocked': True, 'action': 'admin_blocked'})
-        return format_response(errors=[{'code': 'NotFound', 'message': 'User not found'}], status_code=404)
+            return {"data": {"user_id": user_id, "is_blocked": True, "action": "admin_blocked"}}
+        raise HTTPException(status_code=404, detail={"errors": [{"code": "NotFound", "message": "User not found"}]})
     except Exception as e:
-        return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
+        raise HTTPException(status_code=500, detail={"errors": [{"code": "InternalServerError", "message": str(e)}]})
 
 
-@app.route('/v1/users/<int:user_id>/unblock', methods=['POST'])
-@swag_from('docs/unblock_user.yaml')
-def unblock_user(user_id):
-    requester_id = request.json.get('requester_id')
-    if not requester_id or not check_admin(requester_id):
-        return format_response(errors=[{'code': 'Forbidden', 'message': 'User is not an admin'}], status_code=403)
+@app.post("/v1/users/{user_id}/unblock", response_model=AdminResponse)
+async def unblock_user(user_id: int, request: Request):
+    data = await request.json() or {}
+    requester_id = data.get('requester_id')
+    if not requester_id or not await check_admin(requester_id):
+        raise HTTPException(
+            status_code=403, detail={"errors": [{"code": "Forbidden", "message": "User is not an admin"}]}
+        )
     try:
-        success = admin.unblock_user(user_id, requester_id)
+        success = await admin.unblock_user(user_id, requester_id)
         if success:
-            return format_response(data={'user_id': user_id, 'is_blocked': False, 'action': 'admin_unblocked'})
-        return format_response(errors=[{'code': 'NotFound', 'message': 'User not found'}], status_code=404)
+            return {"data": {"user_id": user_id, "is_blocked": False, "action": "admin_unblocked"}}
+        raise HTTPException(status_code=404, detail={"errors": [{"code": "NotFound", "message": "User not found"}]})
     except Exception as e:
-        return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
+        raise HTTPException(status_code=500, detail={"errors": [{"code": "InternalServerError", "message": str(e)}]})
 
 
-@app.errorhandler(404)
-def not_found(error):
-    return format_response(errors=[{'code': 'NotFound', 'message': 'Resource not found'}], status_code=404)
+if __name__ == "__main__":
+    import uvicorn
 
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5002)
+    uvicorn.run("admin_service.app:app", host="0.0.0.0", port=5002, reload=True)

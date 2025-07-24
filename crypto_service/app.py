@@ -1,90 +1,105 @@
-from flask import Flask, jsonify
+import asyncio
+import logging
 from .crypto_parser import CryptoParser
-from flasgger import Swagger, swag_from
 from .price_cache import get_cached_prices, get_cached_coin_info
-import time
-import threading
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import List, Dict, Optional
 
-app = Flask(__name__)
-swagger = Swagger(
-    app,
-    template={
-        "swagger": "2.0",
-        "info": {
-            "title": "Crypto Service API",
-            "description": "API для получения данных о криптовалютах",
-            "version": "1.0.0",
-        },
-        "consumes": ["application/json"],
-        "produces": ["application/json"],
-    },
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class Error(BaseModel):
+    code: str
+    message: str
+
+
+class CryptoResponse(BaseModel):
+    data: Optional[Dict] = None
+    errors: Optional[List[Error]] = None
+    meta: Optional[Dict] = None
+
+
+app = FastAPI(
+    title="Crypto Service API",
+    description="API для получения данных о криптовалютах",
+    version="1.0.0",
 )
+
 parser = CryptoParser()
 
 
-def format_response(data=None, errors=None, meta=None, status_code=200):
-    response = {'data': data} if data is not None else {}
-
-    if errors:
-        # Обеспечиваем правильную структуру ошибок
-        if not isinstance(errors, list):
-            errors = [errors]
-        response['errors'] = [e if isinstance(e, dict) else {'message': str(e)} for e in errors]
-
-    if meta:
-        response['meta'] = meta
-    return jsonify(response), status_code
-
-
-def scheduled_parsing():
+async def scheduled_parsing():
     while True:
-        parser.fetch_and_save_crypto_prices()
-        time.sleep(300)  # 5 minutes
+        try:
+            await parser.fetch_and_save_crypto_prices()
+            logger.info("Crypto prices updated successfully")
+        except Exception as e:
+            logger.error(f"Error in scheduled parsing: {e}")
+        await asyncio.sleep(300)
 
 
-@app.route('/v1/crypto-prices', methods=['GET'])
-@swag_from('docs/get_prices.yaml')
-def get_prices():
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(scheduled_parsing())
+    logger.info("Started scheduled parsing task")
+
+
+@app.get("/v1/crypto-prices", response_model=CryptoResponse)
+async def get_crypto_prices():
     try:
-        data = get_cached_prices()
-        if not data:
-            return format_response(
-                errors=[{'code': 'ServiceUnavailable', 'message': 'Failed to get crypto prices'}], status_code=503
+        prices = await get_cached_prices()
+        if prices is None or "error" in prices:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "errors": [
+                        {
+                            "code": "ServiceUnavailable",
+                            "message": (
+                                prices.get("error", "Crypto data unavailable") if prices else "Crypto data unavailable"
+                            ),
+                        }
+                    ]
+                },
             )
-        return format_response(data=data)
+        return {"data": prices, "errors": None, "meta": None}
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail={"errors": [{"code": "ServiceUnavailable", "message": str(e)}]})
     except Exception as e:
-        return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
+        logger.error(f"Unexpected error: {e}")
+        raise HTTPException(
+            status_code=500, detail={"errors": [{"code": "InternalError", "message": "Internal server error"}]}
+        )
 
 
-@app.route('/v1/crypto-prices/<string:symbol>', methods=['GET'])
-@swag_from('docs/get_coin.yaml')
-def get_coin(symbol):
+@app.get("/v1/crypto-prices/{crypto_symbol}", response_model=CryptoResponse)
+async def get_coin_price(crypto_symbol: str):
     try:
-        coin_info = get_cached_coin_info(symbol)
-        if not coin_info:
-            return format_response(errors=[{'code': 'NotFound', 'message': 'Crypto not found'}], status_code=404)
-        if 'error' in coin_info:
-            return format_response(
-                data=None, errors=[{'code': 'NotFound', 'message': coin_info['error']}], status_code=404
+        coin_info = await get_cached_coin_info(crypto_symbol.upper())
+        if coin_info is None or "error" in coin_info:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "errors": [
+                        {"code": "NotFound", "message": coin_info.get("error", f"Crypto {crypto_symbol} not found")}
+                    ]
+                },
             )
-        return format_response(data=coin_info)
+        return {"data": coin_info, "errors": None, "meta": None}
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(status_code=404, detail={"errors": [{"code": "NotFound", "message": str(e)}]})
+        raise HTTPException(status_code=503, detail={"errors": [{"code": "ServiceUnavailable", "message": str(e)}]})
     except Exception as e:
-        return format_response(errors=[{'code': 'InternalServerError', 'message': str(e)}], status_code=500)
+        logger.error(f"Unexpected error: {e}")
+        raise HTTPException(
+            status_code=500, detail={"errors": [{"code": "InternalError", "message": "Internal server error"}]}
+        )
 
 
-@app.errorhandler(404)
-def not_found(error):
-    return format_response(errors=[{'code': 'NotFound', 'message': 'Resource not found'}], status_code=404)
+if __name__ == "__main__":
+    import uvicorn
 
-
-scheduler_thread = threading.Thread(target=scheduled_parsing)
-scheduler_thread.daemon = True
-scheduler_thread.start()
-
-if __name__ == '__main__':
-    # Start background thread for scheduled parsing
-    scheduler_thread = threading.Thread(target=scheduled_parsing)
-    scheduler_thread.daemon = True
-    scheduler_thread.start()
-
-    app.run(host='0.0.0.0', port=5003)
+    uvicorn.run("crypto_service.app:app", host="0.0.0.0", port=5003, reload=True)
