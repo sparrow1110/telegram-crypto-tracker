@@ -67,15 +67,9 @@ async def verify_token(request: Request) -> bool:
 
 @app.get("/v1/stats", response_model=UserResponse)
 async def get_stats(request: Request):
-    requester_id = request.query_params.get('requester_id')
     if not await verify_token(request):
         raise HTTPException(
             status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
-        )
-    if not requester_id or await db_manager.is_blocked(int(requester_id)):
-        raise HTTPException(
-            status_code=403,
-            detail={"errors": [{"code": "Forbidden", "message": "User is blocked or invalid requester"}]},
         )
     try:
         stats = await db_manager.get_stats()
@@ -91,6 +85,11 @@ async def register_user(request: Request, response: Response):
             status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
         )
     data = await request.json()
+    if not data['user_id'] or await db_manager.is_blocked(data['user_id']):
+        raise HTTPException(
+            status_code=403,
+            detail={"errors": [{"code": "Forbidden", "message": "User is blocked or invalid requester"}]},
+        )
     try:
         success, is_new = await db_manager.register_user(
             data['user_id'], data.get('username'), data.get('first_name'), data.get('last_name')
@@ -117,7 +116,7 @@ async def log_command(request: Request):
             status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
         )
     data = await request.json()
-    requester_id = data.get('requester_id')
+    requester_id = data.get('user_id')
     if not requester_id or await db_manager.is_blocked(requester_id):
         raise HTTPException(
             status_code=403,
@@ -141,12 +140,6 @@ async def add_favorite(user_id: int, request: Request):
             status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
         )
     data = await request.json()
-    requester_id = data.get('requester_id')
-    if not requester_id or await db_manager.is_blocked(requester_id):
-        raise HTTPException(
-            status_code=403,
-            detail={"errors": [{"code": "Forbidden", "message": "User is blocked or invalid requester"}]},
-        )
     try:
         success = await db_manager.add_favorite_crypto(user_id, data['crypto_symbol'])
         logger.info(f"add_favorite_crypto for user {user_id}, symbol {data['crypto_symbol']}: success={success}")
@@ -169,12 +162,6 @@ async def remove_favorite(user_id: int, request: Request):
             status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
         )
     data = await request.json()
-    requester_id = data.get('requester_id')
-    if not requester_id or await db_manager.is_blocked(requester_id):
-        raise HTTPException(
-            status_code=403,
-            detail={"errors": [{"code": "Forbidden", "message": "User is blocked or invalid requester"}]},
-        )
     try:
         if not data or 'crypto_symbol' not in data:
             raise HTTPException(
@@ -206,12 +193,6 @@ async def get_favorites(user_id: int, request: Request):
         raise HTTPException(
             status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
         )
-    requester_id = request.query_params.get('requester_id')
-    if not requester_id or await db_manager.is_blocked(int(requester_id)):
-        raise HTTPException(
-            status_code=403,
-            detail={"errors": [{"code": "Forbidden", "message": "User is blocked or invalid requester"}]},
-        )
     try:
         favorites = await db_manager.get_favorite_cryptos(user_id)
         if favorites is None:
@@ -226,12 +207,6 @@ async def popular_cryptos(request: Request):
     if not await verify_token(request):
         raise HTTPException(
             status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
-        )
-    requester_id = request.query_params.get('requester_id')
-    if not requester_id or await db_manager.is_blocked(int(requester_id)):
-        raise HTTPException(
-            status_code=403,
-            detail={"errors": [{"code": "Forbidden", "message": "User is blocked or invalid requester"}]},
         )
     try:
         limit = int(request.query_params.get('limit', 5))
@@ -261,12 +236,6 @@ async def block_user(user_id: int, request: Request):
             status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
         )
     data = await request.json()
-    requester_id = data.get('requester_id')
-    if not requester_id or await db_manager.is_blocked(requester_id):
-        raise HTTPException(
-            status_code=403,
-            detail={"errors": [{"code": "Forbidden", "message": "User is blocked or invalid requester"}]},
-        )
     try:
         success = await db_manager.block_user(user_id)
         if success:
@@ -285,12 +254,6 @@ async def unblock_user(user_id: int, request: Request):
             status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
         )
     data = await request.json()
-    requester_id = data.get('requester_id')
-    if not requester_id or await db_manager.is_blocked(requester_id):
-        raise HTTPException(
-            status_code=403,
-            detail={"errors": [{"code": "Forbidden", "message": "User is blocked or invalid requester"}]},
-        )
     try:
         success = await db_manager.unblock_user(user_id)
         if success:
@@ -308,13 +271,8 @@ async def is_blocked(user_id: int, request: Request):
         raise HTTPException(
             status_code=401, detail={"errors": [{"code": "Unauthorized", "message": "Invalid or missing API token"}]}
         )
-    requester_id = request.query_params.get('requester_id')
-    if not requester_id:
-        raise HTTPException(
-            status_code=403, detail={"errors": [{"code": "Forbidden", "message": "Invalid or missing requester_id"}]}
-        )
     try:
-        blocked = await db_manager.is_blocked(int(requester_id))
+        blocked = await db_manager.is_blocked(int(user_id))
         if blocked is None:
             raise HTTPException(
                 status_code=404, detail={"errors": [{"code": "UserNotFound", "message": f"User {user_id} not found"}]}

@@ -7,7 +7,7 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.utils.markdown import escape_md
-from .bot_utils import (
+from bot_service.bot_utils import (
     create_admin_keyboard,
     create_main_keyboard,
     create_popular_coins_keyboard,
@@ -48,16 +48,24 @@ class BotStates(StatesGroup):
     UNBLOCK_MODE = State()
 
 
-async def check_user_blocked(user_id):
+# Утилита для обработки ошибок сервисов
+async def handle_service_error(response, message: types.Message = None) -> bool:
     try:
-        async with client_session.get(
-            f"{USER_SERVICE_URL}/users/{user_id}/block-status", params={'requester_id': user_id}
-        ) as response:
-            response.raise_for_status()
-            return (await response.json())['data'].get('is_blocked', False)
+        response.raise_for_status()
+    except aiohttp.ClientResponseError as e:
+        if e.status == 403 and message:
+            await message.answer("🚫 Ваш аккаунт заблокирован. Обратитесь к администратору.")
+            return True
+        logger.error(f"Service error: {e}")
+        if message:
+            await message.answer("Произошла ошибка. Попробуйте позже.")
+        return True
     except Exception as e:
-        logger.error(f"Error checking block status for user {user_id}: {e}")
-        return False
+        logger.error(f"Unexpected error: {e}")
+        if message:
+            await message.answer("Произошла ошибка. Попробуйте позже.")
+        return True
+    return False
 
 
 async def register_user(message: types.Message):
@@ -69,12 +77,13 @@ async def register_user(message: types.Message):
                 'username': message.from_user.username,
                 'first_name': message.from_user.first_name,
                 'last_name': message.from_user.last_name,
-                'requester_id': message.from_user.id,
             },
             headers=DEFAULT_HEADERS,
         ) as response:
-            response.raise_for_status()
+            if await handle_service_error(response, message):
+                return False
         logger.info(f"User {message.from_user.id} registered")
+        return True
     except Exception as e:
         logger.error(f"Error registering user: {e}")
 
@@ -83,7 +92,7 @@ async def log_command(user_id: int, command: str):
     try:
         async with client_session.post(
             f"{USER_SERVICE_URL}/command-logs",
-            json={'user_id': user_id, 'command': command, 'requester_id': user_id},
+            json={'user_id': user_id, 'command': command},
             headers=DEFAULT_HEADERS,
         ) as response:
             response.raise_for_status()
@@ -117,12 +126,10 @@ async def broadcast_message(message_text: str):
 @dp.message_handler(commands=['start'])
 async def send_welcome(message: types.Message):
     user_id = message.from_user.id
-    if await check_user_blocked(user_id):
-        await message.answer("🚫 Ваш аккаунт заблокирован. Обратитесь к администратору.")
+    if not await register_user(message):
         return
-    await register_user(message)
-    await log_command(message.from_user.id, '/start')
-    keyboard = create_main_keyboard(message.from_user.id)
+    await log_command(user_id, '/start')
+    keyboard = create_main_keyboard(user_id)
     await message.answer(
         "👋 Привет! Я бот для отслеживания цен криптовалют.\n\n"
         "Используйте кнопки ниже для навигации или следующие команды:\n"
@@ -137,11 +144,9 @@ async def send_welcome(message: types.Message):
 @dp.message_handler(commands=['help'])
 async def send_help(message: types.Message):
     user_id = message.from_user.id
-    if await check_user_blocked(user_id):
-        await message.answer("🚫 Ваш аккаунт заблокирован. Обратитесь к администратору.")
+    if not await register_user(message):
         return
-    await register_user(message)
-    await log_command(message.from_user.id, '/help')
+    await log_command(user_id, '/help')
     help_text = (
         "🤖 *Помощь по использованию бота:*\n\n"
         "*Основные команды:*\n"
@@ -161,11 +166,9 @@ async def send_help(message: types.Message):
 @dp.message_handler(commands=['prices'])
 async def send_prices(message: types.Message):
     user_id = message.from_user.id
-    if await check_user_blocked(user_id):
-        await message.answer("🚫 Ваш аккаунт заблокирован. Обратитесь к администратору.")
+    if not await register_user(message):
         return
-    await register_user(message)
-    await log_command(message.from_user.id, '/prices')
+    await log_command(user_id, '/prices')
     try:
         async with client_session.get(f"{CRYPTO_SERVICE_URL}/crypto-prices", headers=DEFAULT_HEADERS) as response:
             response.raise_for_status()
@@ -183,12 +186,9 @@ async def send_prices(message: types.Message):
 @dp.message_handler(commands=['favorites'])
 async def send_favorites(message: types.Message):
     user_id = message.from_user.id
-    if await check_user_blocked(user_id):
-        await message.answer("🚫 Ваш аккаунт заблокирован. Обратитесь к администратору.")
+    if not await register_user(message):
         return
-    await register_user(message)
-    await log_command(message.from_user.id, '/favorites')
-    user_id = message.from_user.id
+    await log_command(user_id, '/favorites')
     try:
         async with client_session.get(
             f"{USER_SERVICE_URL}/users/{user_id}/favorite-cryptos",
@@ -217,8 +217,9 @@ async def send_favorites(message: types.Message):
 
 @dp.message_handler(commands=['admin'])
 async def admin_panel(message: types.Message):
-    await register_user(message)
     user_id = message.from_user.id
+    if not await register_user(message):
+        return
     try:
         async with client_session.get(
             f"{ADMIN_SERVICE_URL}/admins/{user_id}/status", headers=DEFAULT_HEADERS
@@ -254,15 +255,12 @@ async def admin_panel(message: types.Message):
 async def handle_text_messages(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     text = message.text
-    if text in ['🔝 Топ-5 криптовалют', '🔍 Поиск криптовалюты']:
-        if await check_user_blocked(user_id):
-            await message.answer("🚫 Ваш аккаунт заблокирован. Обратитесь к администратору.")
-            return
+    if not await register_user(message):
+        return
     if text == '💰 Все криптовалюты':
         await send_prices(message)
     elif text == '🔝 Топ-5 криптовалют':
-        await register_user(message)
-        await log_command(message.from_user.id, '/top5')
+        await log_command(user_id, '/top5')
         try:
             async with client_session.get(f"{CRYPTO_SERVICE_URL}/crypto-prices", headers=DEFAULT_HEADERS) as response:
                 response.raise_for_status()
@@ -273,8 +271,7 @@ async def handle_text_messages(message: types.Message, state: FSMContext):
             logger.error(f"Error getting top5: {e}")
             await message.answer("Ошибка при получении данных. Попробуйте позже.")
     elif text == '🔍 Поиск криптовалюты':
-        await register_user(message)
-        await log_command(message.from_user.id, '/search')
+        await log_command(user_id, '/search')
         await state.set_state(BotStates.SEARCHING_CRYPTO)
         keyboard = create_popular_coins_keyboard()
         await message.answer(
@@ -283,13 +280,11 @@ async def handle_text_messages(message: types.Message, state: FSMContext):
     elif text == '❓ Помощь':
         await send_help(message)
     elif text == '🔙 Завершить поиск':
-        await register_user(message)
         await state.set_state(None)
-        keyboard = create_main_keyboard(message.from_user.id)
+        keyboard = create_main_keyboard(user_id)
         await message.answer("Поиск завершен. Выберите действие:", reply_markup=keyboard)
     elif text == '🔍 Продолжить поиск':
-        await register_user(message)
-        await log_command(message.from_user.id, '/continue_search')
+        await log_command(user_id, '/continue_search')
         await state.set_state(BotStates.SEARCHING_CRYPTO)
         keyboard = create_popular_coins_keyboard()
         await message.answer(
@@ -304,6 +299,8 @@ async def handle_text_messages(message: types.Message, state: FSMContext):
 @dp.message_handler(state=BotStates.SEARCHING_CRYPTO)
 async def process_search_crypto(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
+    if not await register_user(message):
+        return
     text = message.text
     if text == '🔙 Завершить поиск':
         await state.set_state(None)
@@ -320,7 +317,8 @@ async def process_search_crypto(message: types.Message, state: FSMContext):
 
 async def show_coin_info(message: types.Message, symbol: str):
     user_id = message.from_user.id
-    await register_user(message)
+    if not await register_user(message):
+        return
     symbol = ''.join(c for c in symbol.strip().upper() if c.isalnum())  # Очистка символа
     logger.info(f"Cleaned symbol for user {user_id}: {symbol}")
     if not symbol or len(symbol) > 10:
@@ -531,7 +529,6 @@ async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
     try:
         async with client_session.get(
             f"{USER_SERVICE_URL}/users/{user_id}/block-status",
-            params={'requester_id': user_id},
             headers=DEFAULT_HEADERS,
         ) as response:
             response.raise_for_status()

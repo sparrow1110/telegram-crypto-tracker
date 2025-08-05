@@ -1,5 +1,4 @@
 .env
-crypto_service/crypto_prices.json
 admin_service/__pycache__/
 bot_service/__pycache__/
 crypto_service/__pycache__/
