@@ -1,6 +1,6 @@
 # Crypto Bot
 
-**Crypto Bot** — это Telegram-бот для мониторинга цен криптовалют. Проект построен на основе микросервисной архитектуры, где каждый сервис отвечает за определённую функциональность, обеспечивая модульность, масштабируемость и удобство поддержки. В данном README приведено подробное описание каждого сервиса, включая их назначение, архитектуру, зависимости, инструкции по запуску, документацию API и процедуры тестирования.
+**Crypto Bot** — это Telegram-бот для мониторинга цен криптовалют. Проект построен на основе микросервисной архитектуры, где каждый сервис отвечает за определённую функциональность, обеспечивая модульность, масштабируемость и удобство поддержки. В данном README приведено подробное описание каждого сервиса, включая их назначение, архитектуру, зависимости, инструкцию по запуску, документацию API и процедуры тестирования.
 
 ## Содержание
 1. [Bot Service](#1-bot-service)
@@ -14,9 +14,9 @@
 
 ## 1. Bot Service
 
-### Название и назначение сервиса
+### Название и назначение
 **Название**: Bot Service  
-**Назначение**: Сервис Bot Service является основным интерфейсом взаимодействия пользователей с Telegram-ботом. Он обрабатывает команды пользователей, отображает цены криптовалют, управляет списком избранных криптовалют и предоставляет административные функции для некоторых пользователей.
+**Назначение**: Клиентское приложение, реализованное в виде Telegram-бота. Он обрабатывает команды пользователей, отображает цены криптовалют, управляет списком избранных криптовалют и предоставляет административные функции для некоторых пользователей.
 
 **Основные функции**:
 - Отображение актуальных цен криптовалют.
@@ -27,12 +27,12 @@
 
 ### Архитектура и зависимости
 **Технологии и фреймворки**:
-- **Python 3.9**: Основной язык программирования.
-- **pyTelegramBotAPI**: Для взаимодействия с Telegram Bot API.
+- **Python 3.11**: Основной язык программирования.
+- **Aiogram**: Для взаимодействия с Telegram Bot API.
 - **aiohttp**: Для асинхронных HTTP-запросов к другим микросервисам.
 - **python-dotenv**: Для управления переменными окружения.
 
-**Взаимодействие с другими микросервисами**:
+**Взаимодействие с микросервисами**:
 - **User Service**: Регистрация пользователей, логирование команд, управление избранными криптовалютами, проверка статуса блокировки (`/v1/users`, `/v1/command-logs`, `/v1/users/<user_id>/favorite-cryptos`, `/v1/users/<user_id>/block-status`).
 - **Admin Service**: Проверка статуса администратора и выполнение административных действий, таких как блокировка/разблокировка пользователей и получение статистики (`/v1/admins/<user_id>/status`, `/v1/stats`, `/v1/stats/popular-cryptos`, `/v1/users/<user_id>/block`, `/v1/users/<user_id>/unblock`).
 - **Crypto Service**: Получение данных о ценах криптовалют и информации о монетах (`/v1/crypto-prices`, `/v1/crypto-prices/<symbol>`).
@@ -41,51 +41,6 @@
 - **Telegram API**: Для взаимодействия бота с пользователями.
 - **Docker**: Для контейнеризированного развертывания.
 
-### Способы запуска сервиса
-**Предварительные требования**:
-1. Убедитесь, что установлены **Docker** и **Docker Compose**.
-2. Создайте файл `.env` в корне проекта на основе `.env.example` и заполните его необходимыми переменными (например, `TELEGRAM_TOKEN`, `USER_SERVICE_URL`, `ADMIN_SERVICE_URL`, `CRYPTO_SERVICE_URL`, `ADMIN_IDS`). Пример:
-   ```env
-   TELEGRAM_TOKEN=your_telegram_bot_token
-   USER_SERVICE_URL=http://user_service:5001
-   ADMIN_SERVICE_URL=http://admin_service:5002
-   CRYPTO_SERVICE_URL=http://crypto_service:5003
-   ADMIN_IDS=your_telegram_id
-   ```
-**Локальный запуск через Docker**:
-- Для запуска **только Bot Service** и его зависимостей:
-  ```bash
-  docker-compose up --build bot_service
-  ```
-  **Примечание**: Зависимости (Redis, PostgreSQL, и другие сервисы) должны быть запущены отдельно, если они ещё не активны. Для запуска всех сервисов используйте:
-  ```bash
-  docker-compose up --build
-  ```
-**Альтернативный запуск без Docker**:
-1. Установите Python 3.9 и зависимости:
-   ```bash
-   pip install -r bot_service/requirements.txt
-   ```
-2. Настройте переменные окружения в системе или в файле `.env` (например, `TELEGRAM_TOKEN`, `USER_SERVICE_URL` и т.д.).
-3. Запустите сервис:
-   ```bash
-   python bot_service/app.py
-   ```
-   **Примечание**: Убедитесь, что User Service, Admin Service, Crypto Service, Redis и PostgreSQL запущены и доступны.
-
-**Переменные окружения** (указываются в `.env`):
-- `TELEGRAM_TOKEN`: Токен Telegram Bot API.
-- `USER_SERVICE_URL`: URL сервиса User Service (например, `http://user_service:5001`).
-- `ADMIN_SERVICE_URL`: URL сервиса Admin Service (например, `http://admin_service:5002`).
-- `CRYPTO_SERVICE_URL`: URL сервиса Crypto Service (например, `http://crypto_service:5003`).
-- `ADMIN_IDS`: Список Telegram ID администраторов, разделённых запятыми.
-- `USER_SERVICE_PORT`, `ADMIN_SERVICE_PORT`, `CRYPTO_SERVICE_PORT`: Порты соответствующих сервисов.
-
-### API документация
-Bot Service не предоставляет собственный API, но взаимодействует с API других сервисов. Документация Swagger доступна для следующих сервисов:
-- **User Service**: `http://<user_service_host>:5001/apidocs/`
-- **Admin Service**: `http://<admin_service_host>:5002/apidocs/`
-- **Crypto Service**: `http://<crypto_service_host>:5003/apidocs/`
 
 ---
 
@@ -104,11 +59,10 @@ Bot Service не предоставляет собственный API, но в�
 
 ### Архитектура и зависимости
 **Технологии и фреймворки**:
-- **Python 3.9**: Основной язык программирования.
-- **Flask**: Фреймворк для создания API-эндпоинтов.
-- **Flask-SQLAlchemy**: ORM для взаимодействия с базой данных PostgreSQL.
-- **psycopg2-binary**: Адаптер PostgreSQL для Python.
-- **Flasgger**: Для генерации документации Swagger API.
+- **Python 3.11**: Основной язык программирования.
+- **FastAPI**: Фреймворк для создания API-эндпоинтов.
+- **SQLAlchemy**: ORM для взаимодействия с базой данных PostgreSQL.
+- **acyncpg**: Драйвер PostgreSQL.
 - **python-dotenv**: Для управления переменными окружения.
 
 **Взаимодействие с другими микросервисами**:
@@ -119,50 +73,9 @@ Bot Service не предоставляет собственный API, но в�
 - **PostgreSQL**: Хранит данные пользователей, избранное и статистику использования.
 - **Docker**: Для контейнеризированного развертывания.
 
-### Способы запуска сервиса
-**Предварительные требования**:
-1. Убедитесь, что установлены **Docker** и **Docker Compose**.
-2. Создайте файл `.env` в корне проекта на основе `.env.example` и заполните его необходимыми переменными (например, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT`). Пример:
-   ```env
-   POSTGRES_USER=postgres
-   POSTGRES_PASSWORD=your_password
-   POSTGRES_DB=crypto_bot_db
-   POSTGRES_PORT=5432
-   POSTGRES_HOST=postgres
-   ```
-
-**Локальный запуск через Docker**:
-- Для запуска **только User Service** и его зависимости (PostgreSQL):
-  ```bash
-  docker-compose up --build user_service
-  ```
-  **Примечание**: PostgreSQL должен быть запущен отдельно, если ещё не активен. Для запуска всех сервисов используйте:
-  ```bash
-  docker-compose up --build
-  ```
-
-**Альтернативный запуск без Docker**:
-1. Установите PostgreSQL и убедитесь, что он запущен.
-2. Установите Python 3.9 и зависимости:
-   ```bash
-   pip install -r user_service/requirements.txt
-   ```
-3. Настройте переменные окружения в системе или в файле `.env` (например, `POSTGRES_HOST`, `POSTGRES_USER` и т.д.).
-4. Запустите сервис:
-   ```bash
-   python -m user_service.app
-   ```
-   **Примечание**: Убедитесь, что PostgreSQL запущен и доступен.
-
-**Переменные окружения**:
-- `POSTGRES_USER`: Имя пользователя PostgreSQL.
-- `POSTGRES_PASSWORD`: Пароль PostgreSQL.
-- `POSTGRES_DB`: Имя базы данных.
-- `POSTGRES_PORT`: Порт PostgreSQL (по умолчанию: 5432).
-- `POSTGRES_HOST`: Хост PostgreSQL (например, `postgres` в Docker).
 
 ### API документация
-**Документация Swagger**: Доступна по адресу `http://<user_service_host>:5001/apidocs/`  
+**Документация Swagger**: Доступна по адресу `http://localhost:5001/docs`  
 **Основные эндпоинты**:
 - `POST /v1/users`: Регистрация или обновление пользователя.
 - `POST /v1/command-logs`: Логирование команды пользователя.
@@ -190,10 +103,9 @@ Bot Service не предоставляет собственный API, но в�
 
 ### Архитектура и зависимости
 **Технологии и фреймворки**:
-- **Python 3.9**: Основной язык программирования.
-- **Flask**: Фреймворк для создания API-эндпоинтов.
-- **requests**: Для выполнения HTTP-запросов к другим сервисам.
-- **Flasgger**: Для генерации документации Swagger API.
+- **Python 3.11**: Основной язык программирования.
+- **FastAPI**: Фреймворк для создания API-эндпоинтов.
+- **httpx**: Для выполнения HTTP-запросов к другим сервисам.
 - **python-dotenv**: Для управления переменными окружения.
 
 **Взаимодействие с другими микросервисами**:
@@ -203,45 +115,9 @@ Bot Service не предоставляет собственный API, но в�
 **Внешние сервисы**:
 - **Docker**: Для контейнеризированного развертывания.
 
-### Способы запуска сервиса
-**Предварительные требования**:
-1. Убедитесь, что установлены **Docker** и **Docker Compose**.
-2. Создайте файл `.env` в корне проекта на основе `.env.example` и заполните его необходимыми переменными (например, `USER_SERVICE_URL`, `CRYPTO_SERVICE_URL`, `ADMIN_IDS`). Пример:
-   ```env
-   USER_SERVICE_URL=http://user_service:5001
-   CRYPTO_SERVICE_URL=http://crypto_service:5003
-   ADMIN_IDS=your_telegram_id
-   ```
-
-**Локальный запуск через Docker**:
-- Для запуска **только Admin Service** и его зависимостей:
-  ```bash
-  docker-compose up --build admin_service
-  ```
-  **Примечание**: User Service и Crypto Service должны быть запущены отдельно, если ещё не активны. Для запуска всех сервисов используйте:
-  ```bash
-  docker-compose up --build
-  ```
-
-**Альтернативный запуск без Docker**:
-1. Установите Python 3.9 и зависимости:
-   ```bash
-   pip install -r admin_service/requirements.txt
-   ```
-2. Настройте переменные окружения в системе или в файле `.env` (например, `USER_SERVICE_URL`, `CRYPTO_SERVICE_URL`, `ADMIN_IDS`).
-3. Запустите сервис:
-   ```bash
-   python admin_service/app.py
-   ```
-   **Примечание**: Убедитесь, что User Service и Crypto Service запущены и доступны.
-
-**Переменные окружения**:
-- `USER_SERVICE_URL`: URL сервиса User Service (например, `http://user_service:5001`).
-- `CRYPTO_SERVICE_URL`: URL сервиса Crypto Service (например, `http://crypto_service:5003`).
-- `ADMIN_IDS`: Список Telegram ID администраторов, разделённых запятыми.
 
 ### API документация
-**Документация Swagger**: Доступна по адресу `http://<admin_service_host>:5002/apidocs/`  
+**Документация Swagger**: Доступна по адресу `http://localhost:5002/docs`  
 **Основные эндпоинты**:
 - `GET /v1/admins/<user_id>/status`: Проверка статуса администратора.
 - `GET /v1/stats`: Получение статистики использования бота.
@@ -265,12 +141,11 @@ Bot Service не предоставляет собственный API, но в�
 
 ### Архитектура и зависимости
 **Технологии и фреймворки**:
-- **Python 3.9**: Основной язык программирования.
-- **Flask**: Фреймворк для создания API-эндпоинтов.
-- **requests**: Для выполнения HTTP-запросов к API CoinLore.
+- **Python 3.11**: Основной язык программирования.
+- **FastAPI**: Фреймворк для создания API-эндпоинтов.
+- **aiohttp**: Для выполнения HTTP-запросов к API CoinLore.
 - **redis-py**: Для взаимодействия с кэшем Redis.
-- **cachetools**: Для кэширования в памяти с TTL.
-- **Flasgger**: Для генерации документации Swagger API.
+- **asyncache**: Для кэширования в памяти с TTL.
 - **python-dotenv**: Для управления переменными окружения.
 
 **Взаимодействие с другими микросервисами**:
@@ -282,61 +157,63 @@ Bot Service не предоставляет собственный API, но в�
 - **Redis**: Кэширование данных о криптовалютах.
 - **Docker**: Для контейнеризированного развертывания.
 
-### Способы запуска сервиса
-**Предварительные требования**:
-1. Убедитесь, что установлены **Docker** и **Docker Compose**.
-2. Создайте файл `.env` в корне проекта на основе `.env.example` и заполните его необходимыми переменными (например, `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_EXPIRE_SECONDS`). Пример:
-   ```env
-   REDIS_HOST=redis
-   REDIS_PORT=6379
-   REDIS_DB=0
-   REDIS_EXPIRE_SECONDS=300
-   ```
-
-**Локальный запуск через Docker**:
-- Для запуска **только Crypto Service** и его зависимости (Redis):
-  ```bash
-  docker-compose up --build crypto_service
-  ```
-  **Примечание**: Redis должен быть запущен отдельно, если ещё не активен. Для запуска всех сервисов используйте:
-  ```bash
-  docker-compose up --build
-  ```
-
-**Альтернативный запуск без Docker**:
-1. Установите Redis и убедитесь, что он запущен.
-2. Установите Python 3.9 и зависимости:
-   ```bash
-   pip install -r crypto_service/requirements.txt
-   ```
-3. Настройте переменные окружения в системе или в файле `.env` (например, `REDIS_HOST`, `REDIS_PORT` и т.д.).
-4. Запустите сервис:
-   ```bash
-   python crypto_service/app.py
-   ```
-   **Примечание**: Убедитесь, что Redis запущен и доступен.
-
-**Переменные окружения**:
-- `REDIS_HOST`: Хост Redis (например, `redis` в Docker).
-- `REDIS_PORT`: Порт Redis (по умолчанию: 6379).
-- `REDIS_DB`: Номер базы данных Redis (по умолчанию: 0).
-- `REDIS_EXPIRE_SECONDS`: Время жизни кэша в секундах (по умолчанию: 300).
 
 ### API документация
-**Документация Swagger**: Доступна по адресу `http://<crypto_service_host>:5003/apidocs/`  
+**Документация Swagger**: Доступна по адресу `http://localhost:5003/docs`  
 **Основные эндпоинты**:
 - `GET /v1/crypto-prices`: Получение цен всех криптовалют.
 - `GET /v1/crypto-prices/<symbol>`: Получение информации о конкретной криптовалюте (например, `BTC`).
 
 ---
 
-## 5. Тестирование
+## 5. Запуск проекта
+
+### Предварительные требования
+- Установленные [Docker](https://docs.docker.com/get-docker/) и [Docker Compose](https://docs.docker.com/compose/install/).
+- Файл `.env` в корне проекта (на основе `.env.example`).
+
+### Шаги запуска
+
+1. **Создайте `.env` файл** на основе `.env.example` и заполните все необходимые переменные. Пример:
+   ```env
+    TELEGRAM_TOKEN=your_telegram_bot_token
+    API_TOKEN=your_secret_api_token
+    ADMIN_IDS=12345678,87654321
+    POSTGRES_USER=postgres
+    POSTGRES_PASSWORD=your_password
+    POSTGRES_DB=crypto_bot_db
+    POSTGRES_PORT=5432
+    REDIS_HOST=redis
+    REDIS_PORT=6379
+   ```
+
+2. Запустите все сервисы через Docker Compose:
+    ```bash
+    docker-compose up --build
+    ```
+   - Проект будет доступен после успешного запуска всех контейнеров.
+   - Для остановки используйте Ctrl+C или:
+       ```bash
+       docker-compose down
+       ```
+
+3. Проверьте статус сервисов:
+   - Bot Service: Начните диалог с ботом в Telegram.
+   - API Документация: Доступна по адресам:
+        - User Service: http://localhost:5001/docs
+        - Admin Service: http://localhost:5002/docs
+        - Crypto Service: http://localhost:5003/docs
+
+
+---
+
+## 6. Тестирование
 
 ### Как тестировать
 Проект включает модульные тесты для всех сервисов, расположенные в директории `tests/unit`. Тесты используют **pytest** и покрывают основную функциональность каждого сервиса.
 
 **Команды для запуска тестов**:
-1. Убедитесь, что установлены Python 3.9 и зависимости:
+1. Убедитесь, что установлены Python 3.11 и зависимости:
    ```bash
    pip install -r user_service/requirements.txt
    pip install -r admin_service/requirements.txt
@@ -351,13 +228,12 @@ Bot Service не предоставляет собственный API, но в�
    Эта команда запускает тесты с подробным выводом и генерирует отчёт о покрытии в директории `htmlcov`.
 
 **Примечания**:
-- Тесты для User Service используют in-memory базу данных SQLite (`SQLALCHEMY_DATABASE_URI='sqlite:///:memory:'`), чтобы избежать зависимости от PostgreSQL.
-- Для тестов Crypto Service необходим запущенный Redis (`REDIS_HOST` и `REDIS_PORT` должны быть настроены).
+- Тесты для User Service используют in-memory базу данных SQLite (`"sqlite+aiosqlite:///:memory:"`), чтобы избежать зависимости от PostgreSQL.
 - Тесты используют моки для внешних зависимостей (например, API CoinLore, Telegram API) для обеспечения изоляции.
 
 ---
 
-## 6. Контакты и поддержка
+## 7. Контакты и поддержка
 
 **Автор**: Воробьев Никита  
 **Контакты**:
